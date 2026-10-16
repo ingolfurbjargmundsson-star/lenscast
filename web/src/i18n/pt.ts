@@ -28,6 +28,7 @@ export const pt: Partial<Record<MessageKey, string>> = {
   // ── Stream preview ──
   'preview.liveAlt': 'Transmissão ao vivo da câmera',
   'preview.connecting': 'Conectando…',
+
   'preview.streamError': 'Erro na transmissão',
   'preview.noStream': 'Nenhuma transmissão ativa',
   'preview.hint.disabled': 'Ative a transmissão web ou RTSP nas configurações para começar',
@@ -72,6 +73,15 @@ export const pt: Partial<Record<MessageKey, string>> = {
   'preview.audioConnecting': 'Conectando…',
   'preview.audioError': 'Erro de áudio',
   'preview.audioIdle': 'Áudio inativo',
+
+  // ── Lens selector (zoom renders generically from zoomRatio with no catalog entry) ──
+  'lens.front': 'Frontal',
+  'lens.back': 'Traseira',
+  'lens.ultrawide': 'Ultra-angular',
+  'lens.frontUltrawide': 'Frontal ultra-angular',
+  'lens.wide': 'Grande-angular',
+  'lens.cameraId': 'Câmera {id}',
+  'lens.frontVariant': 'Frontal {variant}',
 
   // ── Common words ──
   'common.mode': 'Modo',

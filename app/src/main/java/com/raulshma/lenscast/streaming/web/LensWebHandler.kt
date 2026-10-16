@@ -4,6 +4,7 @@ import com.raulshma.lenscast.core.AppJson
 import android.util.Log
 import androidx.camera.core.CameraSelector
 import com.raulshma.lenscast.camera.CameraService
+import com.raulshma.lenscast.camera.LensInventory
 import com.raulshma.lenscast.camera.model.CameraSettings
 import com.raulshma.lenscast.data.SettingsDataStore
 import com.raulshma.lenscast.streaming.model.LensDto
@@ -40,8 +41,10 @@ class LensWebHandler(
             LensDto(
                 index = index,
                 id = lens.id,
-                label = lens.label,
+                label = LensInventory.baseLabel(lens),
+                kind = lens.labelKind.name,
                 focalLength = lens.focalLength.toDouble(),
+                zoomRatio = lens.zoomRatio?.toDouble(),
                 isFront = lens.lensFacing == CameraSelector.LENS_FACING_FRONT,
                 selected = index == selectedIndex,
             )

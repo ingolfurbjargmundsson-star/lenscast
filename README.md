@@ -18,6 +18,12 @@
   <img alt="CameraX" src="https://img.shields.io/badge/CameraX-FF6F00?style=for-the-badge&logo=android&logoColor=white"/>
 </p>
 
+<p align="center">
+  <a href="https://f-droid.org/packages/com.raulshma.lenscast/">
+    <img alt="Get it on F-Droid" src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" height="75"/>
+  </a>
+</p>
+
 </br>
 
 <p align="middle">
@@ -257,7 +263,7 @@ A CI workflow (`.github/workflows/ci.yml`) runs on every push to main, every pul
 A GitHub Actions workflow (`.github/workflows/release.yml`) automates release builds:
 - Triggers on pushes to `v*` or `release/**` branches, or via manual dispatch
 - Runs the full test suite (web, app, wear) before any signed build
-- Builds the **store flavor** (with the in-app updater) as one signed APK per ABI (`armeabi-v7a`, `arm64-v8a`, `x86_64`) with distinct `versionCode`s (`major*10000 + minor*1000 + patch*10 + abiIndex`); the `fdroid` flavor is built by F-Droid's own recipe, not shipped here
+- Builds the **store flavor** (with the in-app updater) as one signed APK per ABI (`armeabi-v7a`, `arm64-v8a`, `x86_64`) with distinct `versionCode`s (`major*10000 + minor*1000 + patch*10 + abiIndex`); the `fdroid` flavor is built by F-Droid's own recipe and distributed on F-Droid ([get it here](https://f-droid.org/packages/com.raulshma.lenscast/)), not shipped here
 - Publishes them to a **draft** GitHub Release with automatic semantic version tagging — verify the assets, then publish
 - The `versionCode`/`versionName` literals in `app/build.gradle.kts` (which F-Droid's update checker reads) must be bumped in the same release — the workflow overrides them per build via `-PversionCode`/`-PversionName` but does not rewrite the tag's literals
 

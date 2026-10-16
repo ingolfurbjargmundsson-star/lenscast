@@ -790,10 +790,16 @@ object OpenApiSpec {
             "index" to intSchema(),
             "id" to stringSchema(),
             "label" to stringSchema(),
+            "kind" to stringSchema(
+                "Display role for localized chip labels: FRONT, BACK, ULTRAWIDE, " +
+                    "WIDE, ZOOM, FOCAL_MM or CAMERA_ID (absent on pre-kind firmware, " +
+                    "where clients fall back to label)",
+            ),
             "focalLength" to mapOf("type" to "number"),
+            "zoomRatio" to mapOf("type" to "number", "description" to "Relative magnification for ZOOM lenses; null/absent otherwise"),
             "isFront" to boolSchema(),
             "selected" to boolSchema(),
-            required = listOf("index", "id", "label", "focalLength", "isFront", "selected"),
+            required = listOf("index", "id", "label", "kind", "focalLength", "isFront", "selected"),
         ),
         "LensSelectRequest" to schema("index" to intSchema(), required = listOf("index")),
         "TapFocusRequest" to schema(

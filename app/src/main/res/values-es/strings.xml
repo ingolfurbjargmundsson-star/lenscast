@@ -499,4 +499,13 @@
     <string name="settings_backup_url">URL de colección WebDAV</string>
     <string name="settings_backup_password">Contraseña (dejar vacío para conservar)</string>
     <string name="settings_backup_wifi_only">Subir solo con Wi-Fi</string>
+
+    <!-- Chips de lentes: la pantalla de cámara crea las etiquetas según el tipo de lente, nunca cadenas fijas. -->
+    <string name="lens_front">Frontal</string>
+    <string name="lens_back">Trasera</string>
+    <string name="lens_ultrawide">Ultra gran angular</string>
+    <string name="lens_front_ultrawide">Frontal ultra gran angular</string>
+    <string name="lens_wide">Gran angular</string>
+    <string name="lens_camera_id">Cámara %1$s</string>
+    <string name="lens_front_variant">Frontal %1$s</string>
 </resources>

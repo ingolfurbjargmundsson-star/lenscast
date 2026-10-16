@@ -28,6 +28,7 @@ export const en: Record<string, string> = {
   // ── Stream preview ──
   'preview.liveAlt': 'Live camera stream',
   'preview.connecting': 'Connecting...',
+
   'preview.streamError': 'Stream error',
   'preview.noStream': 'No active stream',
   'preview.hint.disabled': 'Enable Web Stream or RTSP in settings to start',
@@ -72,6 +73,15 @@ export const en: Record<string, string> = {
   'preview.audioConnecting': 'Connecting...',
   'preview.audioError': 'Audio Error',
   'preview.audioIdle': 'Audio Idle',
+
+  // ── Lens selector (zoom renders generically from zoomRatio with no catalog entry) ──
+  'lens.front': 'Front',
+  'lens.back': 'Back',
+  'lens.ultrawide': 'Ultrawide',
+  'lens.frontUltrawide': 'Front ultrawide',
+  'lens.wide': 'Wide',
+  'lens.cameraId': 'Camera {id}',
+  'lens.frontVariant': 'Front {variant}',
 
   // ── Common words ──
   'common.mode': 'Mode',

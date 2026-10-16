@@ -402,12 +402,11 @@ class CameraService(private val context: Context) {
 
                     // Always add the logical camera FIRST
                     val logicalFocalLength = getFocalLength(camera2Info)
-                    val logicalLabel = LensInventory.buildLabel(lensFacing, logicalFocalLength, cameraId)
                     val logicalSelector = buildCameraSelector(info)
 
                     val logicalCamInfo = CameraLensInfo(
                         id = cameraId,
-                        label = logicalLabel,
+                        labelKind = LensInventory.labelKind(lensFacing, logicalFocalLength),
                         lensFacing = lensFacing,
                         focalLength = logicalFocalLength,
                         cameraSelector = logicalSelector,
@@ -424,7 +423,6 @@ class CameraService(private val context: Context) {
                             if (physId == cameraId) continue
 
                             val focalLength = getFocalLength(physCamera2Info)
-                            val label = LensInventory.buildLabel(lensFacing, focalLength, physId)
                             val selector = CameraSelector.Builder()
                                 .requireLensFacing(lensFacing)
                                 .setPhysicalCameraId(physId)
@@ -433,7 +431,7 @@ class CameraService(private val context: Context) {
                             lenses.add(
                                 CameraLensInfo(
                                     id = physId,
-                                    label = label,
+                                    labelKind = LensInventory.labelKind(lensFacing, focalLength),
                                     lensFacing = lensFacing,
                                     focalLength = focalLength,
                                     cameraSelector = selector,
@@ -447,9 +445,14 @@ class CameraService(private val context: Context) {
                 }
             }
 
-            // Inventory decisions (dedup, order, main-lens default) live in
-            // the tested LensInventory; the service only publishes them.
-            val sorted = LensInventory.sortLenses(LensInventory.deduplicate(lenses))
+            // Inventory decisions (dedup, zoom ratios, collision pass, order,
+            // main-lens default) live in the tested LensInventory; the service
+            // only publishes them.
+            val sorted = LensInventory.sortLenses(
+                LensInventory.disambiguate(
+                    LensInventory.assignZoomRatios(LensInventory.deduplicate(lenses))
+                )
+            )
 
             _availableLenses.value = sorted
 
@@ -510,7 +513,7 @@ class CameraService(private val context: Context) {
             return
         }
         val lens = lenses[index]
-        Log.d(TAG, "selectLens: switching to lens $index: ${lens.label}, provider=${cameraProvider != null}, previewView=${currentPreviewView != null}")
+        Log.d(TAG, "selectLens: switching to lens $index: ${LensInventory.baseLabel(lens)}, provider=${cameraProvider != null}, previewView=${currentPreviewView != null}")
         
         _selectedLensIndex.value = index
         currentCameraSelector = lens.cameraSelector

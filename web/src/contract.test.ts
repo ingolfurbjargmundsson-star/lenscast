@@ -297,15 +297,21 @@ describe('DTO contract fixtures', () => {
     const lenses: LensesResponse = lensesFixture as LensesResponse
     expectKeys(lenses as unknown as Record<string, unknown>, ['lenses', 'selectedIndex'])
     expect(lenses.lenses.length).toBeGreaterThan(0)
+    const kinds = ['FRONT', 'BACK', 'ULTRAWIDE', 'WIDE', 'ZOOM', 'FOCAL_MM', 'CAMERA_ID']
     for (const lens of lenses.lenses) {
       expectKeys(lens as unknown as Record<string, unknown>, [
         'index',
         'id',
         'label',
+        'kind',
         'focalLength',
         'isFront',
         'selected',
       ])
+      expect(kinds).toContain(lens.kind)
+      if (lens.kind === 'ZOOM') {
+        expect(lens.zoomRatio).toBeGreaterThan(0)
+      }
     }
   })
 

@@ -2,6 +2,7 @@ package com.raulshma.lenscast.streaming.web
 
 import com.raulshma.lenscast.core.AppJson
 import com.raulshma.lenscast.camera.CameraService
+import com.raulshma.lenscast.camera.LensInventory
 import com.raulshma.lenscast.core.PowerManager
 import com.raulshma.lenscast.core.StreamWatchdog
 import com.raulshma.lenscast.core.ThermalMonitor
@@ -145,7 +146,7 @@ class StatusWebHandler(
                     ?: settingsDataStore.settings.value.zoomRatio
                 ).toDouble(),
             lensId = lens?.id,
-            lensLabel = lens?.label,
+            lensLabel = lens?.let { LensInventory.baseLabel(it) },
             zoomMin = zoomRange?.start?.toDouble(),
             zoomMax = zoomRange?.endInclusive?.toDouble(),
             exposureCompensationMin = exposureRange?.start,

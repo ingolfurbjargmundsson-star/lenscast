@@ -501,4 +501,13 @@
     <string name="settings_backup_url">URL de la collection WebDAV</string>
     <string name="settings_backup_password">Mot de passe (laisser vide pour conserver)</string>
     <string name="settings_backup_wifi_only">Téléverser uniquement en Wi-Fi</string>
+
+    <!-- Pastilles d'objectifs : l'écran caméra construit les libellés à partir du type d'objectif, jamais de chaînes fixes. -->
+    <string name="lens_front">Front</string>
+    <string name="lens_back">Arrière</string>
+    <string name="lens_ultrawide">Ultra grand-angle</string>
+    <string name="lens_front_ultrawide">Front ultra grand-angle</string>
+    <string name="lens_wide">Grand-angle</string>
+    <string name="lens_camera_id">Caméra %1$s</string>
+    <string name="lens_front_variant">Front %1$s</string>
 </resources>

@@ -16,7 +16,7 @@ class ZoomPresetsPolicyTest {
 
     private fun lens(focal: Float, back: Boolean = true) = CameraLensInfo(
         id = "lens-$focal",
-        label = "L",
+        labelKind = LensLabelKind.WIDE,
         lensFacing = if (back) CameraSelector.LENS_FACING_BACK else CameraSelector.LENS_FACING_FRONT,
         focalLength = focal,
         cameraSelector = if (back) CameraSelector.DEFAULT_BACK_CAMERA else CameraSelector.DEFAULT_FRONT_CAMERA,

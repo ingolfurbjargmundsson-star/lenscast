@@ -493,4 +493,13 @@
     <string name="settings_backup_url">WebDAV 集合 URL</string>
     <string name="settings_backup_password">密码（留空保持不变）</string>
     <string name="settings_backup_wifi_only">仅通过 Wi-Fi 上传</string>
+
+    <!-- 镜头芯片：相机界面根据镜头类型构建标签，而非固定字符串。 -->
+    <string name="lens_front">前置</string>
+    <string name="lens_back">后置</string>
+    <string name="lens_ultrawide">超广角</string>
+    <string name="lens_front_ultrawide">前置超广角</string>
+    <string name="lens_wide">广角</string>
+    <string name="lens_camera_id">相机 %1$s</string>
+    <string name="lens_front_variant">前置 %1$s</string>
 </resources>

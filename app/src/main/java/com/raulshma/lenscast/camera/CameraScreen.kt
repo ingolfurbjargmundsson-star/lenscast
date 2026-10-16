@@ -6,6 +6,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.camera.core.CameraSelector
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -132,12 +133,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.raulshma.lenscast.MainApplication
 import com.raulshma.lenscast.R
+import java.util.Locale
 import com.raulshma.lenscast.camera.model.CameraDashboardPolicy
 import com.raulshma.lenscast.camera.model.CameraLensInfo
 import com.raulshma.lenscast.camera.model.CameraSettings
 import com.raulshma.lenscast.camera.model.CameraState
 import com.raulshma.lenscast.camera.model.GridViewPolicy
 import com.raulshma.lenscast.camera.model.LevelIndicatorPolicy
+import com.raulshma.lenscast.camera.model.LensLabelKind
 import com.raulshma.lenscast.camera.model.PreviewGestures
 import com.raulshma.lenscast.camera.model.ProToolsPolicy
 import com.raulshma.lenscast.camera.model.QuickSettingCatalog
@@ -2366,7 +2369,7 @@ private fun LensSelectorRow(
                     onClick = { onLensSelected(index) },
                     label = {
                         Text(
-                            text = lens.label,
+                            text = localizedLensLabel(lens),
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                             ),
@@ -2386,3 +2389,39 @@ private fun LensSelectorRow(
         }
     }
 }
+
+/**
+ * The chip label, built from the lens's [LensLabelKind] and string
+ * resources — the inventory hands down data, never finished English
+ * strings, so the chips localize with the rest of the screen. Zoom lenses
+ * render their relative magnification ("2x", locale-formatted); with no
+ * ratio (unknown 1x reference) they fall back to the focal length.
+ */
+@Composable
+private fun localizedLensLabel(lens: CameraLensInfo): String {
+    val front = lens.lensFacing == CameraSelector.LENS_FACING_FRONT
+    return when (lens.labelKind) {
+        LensLabelKind.FRONT -> stringResource(R.string.lens_front)
+        LensLabelKind.BACK -> stringResource(R.string.lens_back)
+        LensLabelKind.ULTRAWIDE ->
+            if (front) stringResource(R.string.lens_front_ultrawide)
+            else stringResource(R.string.lens_ultrawide)
+        LensLabelKind.WIDE -> stringResource(R.string.lens_wide)
+        LensLabelKind.ZOOM -> {
+            val zoom = if (lens.zoomRatio != null && lens.zoomRatio > 0f) {
+                LensInventory.formatZoom(lens.zoomRatio, Locale.getDefault())
+            } else {
+                LensInventory.formatFocal(lens.focalLength, Locale.getDefault())
+            }
+            lensVariant(front, zoom)
+        }
+        LensLabelKind.FOCAL_MM ->
+            lensVariant(front, LensInventory.formatFocal(lens.focalLength, Locale.getDefault()))
+        LensLabelKind.CAMERA_ID -> stringResource(R.string.lens_camera_id, lens.id)
+    }
+}
+
+/** "Front 2x"-style composition for the front camera's secondary lenses. */
+@Composable
+private fun lensVariant(front: Boolean, variant: String): String =
+    if (front) stringResource(R.string.lens_front_variant, variant) else variant

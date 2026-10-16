@@ -423,11 +423,30 @@ export interface ConnectionQualityStatus {
   clientDetails: Record<string, ClientConnectionDetail>
 }
 
+/**
+ * Display role for a lens, from the backend's LensLabelKind — the chip label
+ * is localized from this instead of the backend's English base label. Optional
+ * so a stale cached dashboard against an older backend falls back to `label`.
+ * ZOOM carries the relative magnification in `zoomRatio` (generic: 2x, 3.4x,
+ * 10x — never a new enum value).
+ */
+export type LensKind =
+  | 'FRONT'
+  | 'BACK'
+  | 'ULTRAWIDE'
+  | 'WIDE'
+  | 'ZOOM'
+  | 'FOCAL_MM'
+  | 'CAMERA_ID'
+
 export interface LensInfo {
   index: number
   id: string
   label: string
+  kind?: LensKind
   focalLength: number
+  /** Relative magnification for ZOOM lenses; absent on pre-generic firmware. */
+  zoomRatio?: number | null
   isFront: boolean
   selected: boolean
 }

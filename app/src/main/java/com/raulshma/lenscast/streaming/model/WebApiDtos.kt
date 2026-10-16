@@ -518,8 +518,21 @@ data class CaptureResponse(
 data class LensDto(
     val index: Int,
     val id: String,
+    /** English base label — kept so stale cached dashboards still render something
+     * (telephoto bases are now generic ratios, e.g. "3.4x", not the old fixed bands). */
     val label: String,
+    /**
+     * Display role ("WIDE", "FRONT", "ULTRAWIDE", "ZOOM", …) — the dashboard builds
+     * its localized chip label from this instead of the English label.
+     */
+    val kind: String,
     val focalLength: Double,
+    /**
+     * Magnification relative to the main wide lens for ZOOM lenses; null for
+     * other kinds or when the 1x reference is unknown (dashboard falls back
+     * to the focal length). Absent on pre-generic firmware.
+     */
+    val zoomRatio: Double? = null,
     val isFront: Boolean,
     val selected: Boolean,
 )

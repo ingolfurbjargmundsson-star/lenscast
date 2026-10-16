@@ -498,4 +498,13 @@
     <string name="settings_backup_url">WebDAV-Sammlungs-URL</string>
     <string name="settings_backup_password">Passwort (leer lassen zum Behalten)</string>
     <string name="settings_backup_wifi_only">Nur über WLAN hochladen</string>
+
+    <!-- Objektiv-Chips: das Kamera-Display baut die Beschriftungen aus der Objektiv-Art, nie fixe Zeichenketten. -->
+    <string name="lens_front">Front</string>
+    <string name="lens_back">Hinten</string>
+    <string name="lens_ultrawide">Ultraweitwinkel</string>
+    <string name="lens_front_ultrawide">Front-Ultraweitwinkel</string>
+    <string name="lens_wide">Weitwinkel</string>
+    <string name="lens_camera_id">Kamera %1$s</string>
+    <string name="lens_front_variant">Front %1$s</string>
 </resources>

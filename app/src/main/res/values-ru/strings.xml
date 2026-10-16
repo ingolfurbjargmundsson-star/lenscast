@@ -517,4 +517,13 @@
     <string name="settings_backup_url">URL коллекции WebDAV</string>
     <string name="settings_backup_password">Пароль (оставьте пустым, чтобы не менять)</string>
     <string name="settings_backup_wifi_only">Загружать только по Wi-Fi</string>
+
+    <!-- Плашки объективов: экран камеры собирает подписи по типу объектива, а не из фиксированных строк. -->
+    <string name="lens_front">Фронтальная</string>
+    <string name="lens_back">Основная</string>
+    <string name="lens_ultrawide">Сверхширокоугольная</string>
+    <string name="lens_front_ultrawide">Фронтальная сверхширокоугольная</string>
+    <string name="lens_wide">Широкоугольная</string>
+    <string name="lens_camera_id">Камера %1$s</string>
+    <string name="lens_front_variant">Фронтальная %1$s</string>
 </resources>

@@ -508,4 +508,15 @@
         <item quantity="other">Share %d items</item>
     </plurals>
     <string name="gallery_open_chooser">Open %1$s</string>
+
+    <!-- Lens chips: the camera screen builds labels from the lens's kind, never fixed strings.
+         Zoom lenses render their relative magnification ("2x") formatted in code — no resource
+         needed, so a 4x/10x periscope never adds strings. -->
+    <string name="lens_front">Front</string>
+    <string name="lens_back">Back</string>
+    <string name="lens_ultrawide">Ultrawide</string>
+    <string name="lens_front_ultrawide">Front ultrawide</string>
+    <string name="lens_wide">Wide</string>
+    <string name="lens_camera_id">Camera %1$s</string>
+    <string name="lens_front_variant">Front %1$s</string>
 </resources>

@@ -501,4 +501,13 @@
     <string name="settings_backup_url">URL da coleção WebDAV</string>
     <string name="settings_backup_password">Senha (deixe em branco para manter)</string>
     <string name="settings_backup_wifi_only">Enviar somente por Wi-Fi</string>
+
+    <!-- Chips de lentes: a tela da câmera cria os rótulos a partir do tipo de lente, nunca strings fixas. -->
+    <string name="lens_front">Frontal</string>
+    <string name="lens_back">Traseira</string>
+    <string name="lens_ultrawide">Ultra-angular</string>
+    <string name="lens_front_ultrawide">Frontal ultra-angular</string>
+    <string name="lens_wide">Grande-angular</string>
+    <string name="lens_camera_id">Câmera %1$s</string>
+    <string name="lens_front_variant">Frontal %1$s</string>
 </resources>

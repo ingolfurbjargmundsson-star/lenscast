@@ -3,18 +3,30 @@
     {
       "index": 0,
       "id": "0",
-      "label": "Back Camera",
-      "focalLength": 5.4,
+      "label": "Wide",
+      "focalLength": 4.3,
       "isFront": false,
-      "selected": true
+      "selected": true,
+      "kind": "WIDE"
     },
     {
       "index": 1,
+      "id": "2",
+      "label": "2x",
+      "focalLength": 8.6,
+      "zoomRatio": 2.0,
+      "isFront": false,
+      "selected": false,
+      "kind": "ZOOM"
+    },
+    {
+      "index": 2,
       "id": "1",
-      "label": "Front Camera",
+      "label": "Front",
       "focalLength": 4.0,
       "isFront": true,
-      "selected": false
+      "selected": false,
+      "kind": "FRONT"
     }
   ],
   "selectedIndex": 0

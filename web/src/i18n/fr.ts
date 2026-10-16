@@ -28,6 +28,7 @@ export const fr: Partial<Record<MessageKey, string>> = {
   // ── Stream preview ──
   'preview.liveAlt': 'Flux caméra en direct',
   'preview.connecting': 'Connexion...',
+
   'preview.streamError': 'Erreur de flux',
   'preview.noStream': 'Aucun flux actif',
   'preview.hint.disabled': 'Activez le flux web ou RTSP dans les réglages pour démarrer',
@@ -72,6 +73,15 @@ export const fr: Partial<Record<MessageKey, string>> = {
   'preview.audioConnecting': 'Connexion...',
   'preview.audioError': 'Erreur audio',
   'preview.audioIdle': 'Audio inactif',
+
+  // ── Lens selector (zoom renders generically from zoomRatio with no catalog entry) ──
+  'lens.front': 'Front',
+  'lens.back': 'Arrière',
+  'lens.ultrawide': 'Ultra grand-angle',
+  'lens.frontUltrawide': 'Front ultra grand-angle',
+  'lens.wide': 'Grand-angle',
+  'lens.cameraId': 'Caméra {id}',
+  'lens.frontVariant': 'Front {variant}',
 
   // ── Common words ──
   'common.mode': 'Mode',

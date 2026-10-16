@@ -29,6 +29,7 @@ export const ru: Partial<Record<MessageKey, string>> = {
   // ── Stream preview ──
   'preview.liveAlt': 'Прямая трансляция с камеры',
   'preview.connecting': 'Подключение...',
+
   'preview.streamError': 'Ошибка трансляции',
   'preview.noStream': 'Нет активной трансляции',
   'preview.hint.disabled': 'Включите веб-трансляцию или RTSP в настройках, чтобы начать',
@@ -73,6 +74,15 @@ export const ru: Partial<Record<MessageKey, string>> = {
   'preview.audioConnecting': 'Подключение...',
   'preview.audioError': 'Ошибка звука',
   'preview.audioIdle': 'Звук ожидает',
+
+  // ── Lens selector (zoom renders generically from zoomRatio with no catalog entry) ──
+  'lens.front': 'Фронтальная',
+  'lens.back': 'Основная',
+  'lens.ultrawide': 'Сверхширокоугольная',
+  'lens.frontUltrawide': 'Фронтальная сверхширокоугольная',
+  'lens.wide': 'Широкоугольная',
+  'lens.cameraId': 'Камера {id}',
+  'lens.frontVariant': 'Фронтальная {variant}',
 
   // ── Common words ──
   'common.mode': 'Режим',

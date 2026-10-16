@@ -28,6 +28,7 @@ export const zh: Partial<Record<MessageKey, string>> = {
   // ── Stream preview ──
   'preview.liveAlt': '相机实时画面',
   'preview.connecting': '连接中…',
+
   'preview.streamError': '直播出错',
   'preview.noStream': '没有正在进行的直播',
   'preview.hint.disabled': '请在设置中启用网页直播或 RTSP 以开始',
@@ -72,6 +73,15 @@ export const zh: Partial<Record<MessageKey, string>> = {
   'preview.audioConnecting': '连接中…',
   'preview.audioError': '音频出错',
   'preview.audioIdle': '音频空闲',
+
+  // ── Lens selector (zoom renders generically from zoomRatio with no catalog entry) ──
+  'lens.front': '前置',
+  'lens.back': '后置',
+  'lens.ultrawide': '超广角',
+  'lens.frontUltrawide': '前置超广角',
+  'lens.wide': '广角',
+  'lens.cameraId': '相机 {id}',
+  'lens.frontVariant': '前置 {variant}',
 
   // ── Common words ──
   'common.mode': '模式',
