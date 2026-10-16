@@ -39,11 +39,11 @@ import org.junit.Test
  * [MutableStateFlow] per setting, every runtime collaborator is a relaxed
  * mockk, and each test settles the initial fan-out before mutating a flow,
  * then pins the exact runtime calls the change must (and must not) produce —
- * including the two documented asymmetries: the camera-settings flow's
- * `distinctUntilChanged` frame-rate fan-out and the MQTT combine's collect-time
- * enabled read. Group collectors (audio, RTSP, watchdog, motion, sound,
- * discovery) re-apply their whole group per emission, so a single field's
- * change is also a whole-group re-apply — the totals below pin that.
+ * including the documented asymmetry: the camera-settings flow's
+ * `distinctUntilChanged` frame-rate fan-out. Group collectors (audio, RTSP,
+ * watchdog, motion, sound, discovery) re-apply their whole group per
+ * emission, so a single field's change is also a whole-group re-apply —
+ * the totals below pin that.
  */
 class SettingsApplierTest {
 
@@ -638,6 +638,13 @@ class SettingsApplierTest {
         eventually {
             verify(exactly = 1) { streamingManager.setPort(8080) }
             coVerify(exactly = 1) { cameraService.applySettings(any()) }
+            // Settle the three collectors under test before mutating:
+            // otherwise a mutation landing between their subscription and
+            // their first emission re-runs the rule and breaks the
+            // exactly-once pinning on loaded runners.
+            verify(exactly = 1) { streamWatchdog.setMaxRetries(3) }
+            verify(exactly = 1) { mqttAlertPublisher.close() }
+            verify(exactly = 1) { onvifServer.stop() }
         }
         watchdogMaxRetries.value = 9
         mqttEnabled.value = true

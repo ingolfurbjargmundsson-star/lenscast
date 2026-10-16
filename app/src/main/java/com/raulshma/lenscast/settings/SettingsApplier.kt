@@ -336,8 +336,14 @@ class SettingsApplier(
                 },
             ) { connection, delivery ->
                 connection to delivery
-            }.collect {
-                if (settingsDataStore.mqttEnabled.value) {
+            }.collect { (connection, _) ->
+                // Gate on the emission's enabled flag, not a live
+                // mqttEnabled.value read: the emission already carries the
+                // config that triggered this run, so a mutation landing
+                // between emission and collect can't double-run start (the
+                // old live read turned one close + one start into two
+                // starts on loaded CI runners).
+                if (connection.enabled) {
                     mqttAlertPublisher.start()
                 } else {
                     mqttAlertPublisher.close()
