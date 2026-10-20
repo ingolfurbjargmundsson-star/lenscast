@@ -67,6 +67,7 @@ class TlsCertManager(private val context: Context) {
     }
 
     private fun loadOrCreate(currentIps: List<String>): Identity {
+        ensureTlsDirectory()
         val keyPair = loadOrCreateKey()
         val certDer = certFile.takeIf { it.exists() }?.readBytes()
         val certificate = certDer?.let { der ->
@@ -87,6 +88,15 @@ class TlsCertManager(private val context: Context) {
             certificate = finalCert,
             fingerprint = fingerprintOf(certFile.readBytes()),
         )
+    }
+
+    /**
+     * The tls/ folder under filesDir does not exist on a fresh install;
+     * every file write below throws ENOENT without it (issue #8 — the
+     * silent plain-HTTP fallback the HTTPS toggle's failure produced).
+     */
+    private fun ensureTlsDirectory() {
+        keyFile.parentFile?.mkdirs()
     }
 
     private fun loadOrCreateKey(): KeyPair {
