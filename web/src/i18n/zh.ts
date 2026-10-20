@@ -669,6 +669,7 @@ export const zh: Partial<Record<MessageKey, string>> = {
   'share.copied': '已复制！',
   'share.hint1': '在同一网络的另一台设备上打开此面板。',
   'share.hint2': '单个拍摄可通过相册查看器获得可复制的链接：',
+  'share.usbHint': '无需网络：手机通过 USB 连接后，一条 adb 命令即可在电脑上访问此面板 —',
 
   // ── Gallery ──
   'gallery.title': '相册',

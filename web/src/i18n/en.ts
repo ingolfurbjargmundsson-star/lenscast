@@ -671,6 +671,7 @@ export const en: Record<string, string> = {
   'share.copied': 'Copied!',
   'share.hint1': 'Open this dashboard on another device on the same network.',
   'share.hint2': 'Individual captures get copyable links from the gallery viewer:',
+  'share.usbHint': 'No network needed: with the phone on USB, one adb command serves this dashboard on the computer —',
 
   // ── Gallery ──
   'gallery.title': 'Gallery',

@@ -671,6 +671,7 @@ export const de: Partial<Record<MessageKey, string>> = {
   'share.copied': 'Kopiert!',
   'share.hint1': 'Dieses Dashboard auf einem anderen Gerät im selben Netzwerk öffnen.',
   'share.hint2': 'Einzelne Aufnahmen erhalten kopierbare Links über den Galerie-Betrachter:',
+  'share.usbHint': 'Kein Netzwerk nötig: per USB angeschlossen stellt ein einziger adb-Befehl dieses Dashboard auf dem Computer bereit —',
 
   // ── Gallery ──
   'gallery.title': 'Galerie',

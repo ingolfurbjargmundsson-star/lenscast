@@ -669,6 +669,7 @@ export const pt: Partial<Record<MessageKey, string>> = {
   'share.copied': 'Copiado!',
   'share.hint1': 'Abra este painel em outro dispositivo na mesma rede.',
   'share.hint2': 'Capturas individuais recebem links copiáveis pelo visualizador da galeria:',
+  'share.usbHint': 'Sem rede: com o telefone ligado por USB, um único comando adb serve este painel no computador —',
 
   // ── Gallery ──
   'gallery.title': 'Galeria',

@@ -669,6 +669,7 @@ export const fr: Partial<Record<MessageKey, string>> = {
   'share.copied': 'Copié !',
   'share.hint1': 'Ouvrez ce tableau de bord depuis un autre appareil sur le même réseau.',
   'share.hint2': 'Les captures individuelles obtiennent des liens copiables depuis la visionneuse de la galerie :',
+  'share.usbHint': 'Aucun réseau requis : une seule commande adb, le téléphone en USB, et ce tableau de bord est servi sur la machine —',
 
   // ── Gallery ──
   'gallery.title': 'Galerie',

@@ -102,6 +102,10 @@ export default function ShareCard() {
               {t('share.hint1')} {t('share.hint2')}
               {' '}<code>#/gallery/&lt;file&gt;</code>
             </p>
+            <p class="share-hint">
+              {t('share.usbHint')}
+              {' '}<code>adb forward tcp:8080 tcp:8080</code>
+            </p>
           </div>
         </div>
       </div>

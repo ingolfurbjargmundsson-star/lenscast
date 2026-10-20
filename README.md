@@ -174,6 +174,7 @@ LensCast is an Android camera application with live video/audio streaming to web
 ## Documentation
 
 - [Remote access](docs/remote-access.md) — viewing the stream outside your LAN (Tailscale, WireGuard, and why port forwarding is discouraged)
+- [USB streaming](docs/usb-streaming.md) — watching the stream over the phone's USB cable with one `adb forward`: no Wi-Fi network, radio-free latency
 - [NVR integration](docs/nvr-integration.md) — Home Assistant (generic camera + ONVIF), VLC/ffmpeg, Frigate, and detection webhook recipes
 - [RTMP push](docs/rtmp.md) — push-publishing the stream to YouTube, Twitch, nginx-rtmp, and other RTMP(S) servers
 - [SRT push](docs/srt.md) — push-publishing the stream over Secure Reliable Transport (UDP) to SRT listeners
