@@ -272,11 +272,13 @@ class SettingsApplierTest {
     fun `port change applies once and re-runs ensureServerRunning and an identical value does not re-apply`() {
         eventually {
             verify(exactly = 1) { streamingManager.setPort(8080) }
+            verify(exactly = 1) { streamingManager.setTlsEnabled(false) }
             verify(exactly = 1) { streamingManager.ensureServerRunning() }
         }
         streamingPort.value = 9123
         eventually {
             verify(exactly = 1) { streamingManager.setPort(9123) }
+            verify(exactly = 2) { streamingManager.setTlsEnabled(false) }
             verify(exactly = 2) { streamingManager.ensureServerRunning() }
         }
         // StateFlow conflation: re-writing the same persisted value emits
@@ -285,17 +287,23 @@ class SettingsApplierTest {
         settle()
         verify(exactly = 1) { streamingManager.setPort(9123) }
         verify(exactly = 2) { streamingManager.setPort(any()) }
+        verify(exactly = 2) { streamingManager.setTlsEnabled(false) }
     }
 
     @Test
     fun `tls toggle rides the manager's stop-recreate-start seam`() {
         eventually {
             verify(exactly = 1) { streamingManager.setTlsEnabled(false) }
+            verify(exactly = 1) { streamingManager.setPort(8080) }
         }
         httpsEnabled.value = true
         eventually {
             verify(exactly = 1) { streamingManager.setTlsEnabled(true) }
             verify(exactly = 2) { streamingManager.setTlsEnabled(any()) }
+            // Port and TLS share one collector: every emission re-runs the
+            // ordered transport apply, which is idempotent for unchanged port.
+            verify(exactly = 2) { streamingManager.setPort(8080) }
+            verify(exactly = 2) { streamingManager.ensureServerRunning() }
         }
     }
 

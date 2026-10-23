@@ -22,6 +22,15 @@ class SseStatusStream(
 
     private val pump = SseClientPump(writerThreadName = "SseStatusWriter")
 
+    /**
+     * Pushes a one-shot `transport` event telling every open dashboard the
+     * scheme of the listener replacing this one. Called before a TLS toggle
+     * restarts the transport; the dashboard navigates to the same host, port
+     * and path under [scheme]. True when at least one client was connected.
+     */
+    fun notifyTransportSwitch(scheme: String): Boolean =
+        pump.broadcast("event: transport\ndata: {\"scheme\":\"$scheme\"}\n\n")
+
     /** Null when the client cap is reached — the transport answers 503. */
     fun open(): InputStream? = pump.open {
         while (isOpen && !lifetimeSpent) {

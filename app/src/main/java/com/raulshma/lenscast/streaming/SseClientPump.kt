@@ -3,6 +3,7 @@ package com.raulshma.lenscast.streaming
 import java.io.InputStream
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.BlockingQueue
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -26,6 +27,9 @@ internal class SseClientPump(
 
     private val clients = AtomicInteger(0)
 
+    /** Live sessions, so the server can push one frame to every open client. */
+    private val sessions = ConcurrentHashMap.newKeySet<SseSession>()
+
     /** Null when the client cap is reached — the transport answers 503. */
     fun open(body: SseSession.() -> Unit): InputStream? {
         if (clients.getAndIncrement() >= maxClients) {
@@ -40,6 +44,21 @@ internal class SseClientPump(
         }
     }
 
+    /**
+     * Offers [text] to every live session (the transport lifecycle notices:
+     * a scheme switch cannot wait for the next content-loop tick). True when
+     * at least one client received the frame.
+     */
+    fun broadcast(text: String): Boolean {
+        var delivered = false
+        for (session in sessions) {
+            if (!session.isOpen) continue
+            session.enqueue(text)
+            delivered = true
+        }
+        return delivered
+    }
+
     inner class SseSession(private val body: SseSession.() -> Unit) : InputStream() {
         // Whole UTF-8 chunks, not bytes: enqueue drops one frame when the
         // reader stalls, instead of walking a per-byte queue.
@@ -48,6 +67,14 @@ internal class SseClientPump(
         private var offset = 0
         private val closed = AtomicBoolean(false)
         private val startMs = System.currentTimeMillis()
+
+        init {
+            // Register before the writer starts: a body that returns at once
+            // would otherwise close an untracked session and leave it in the
+            // broadcast set.
+            sessions.add(this)
+        }
+
         private val writer = Thread({ runSession() }, writerThreadName).apply {
             isDaemon = true
             start()
@@ -114,6 +141,7 @@ internal class SseClientPump(
 
         override fun close() {
             if (closed.compareAndSet(false, true)) {
+                sessions.remove(this)
                 writer.interrupt()
                 clients.decrementAndGet()
             }

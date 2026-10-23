@@ -14,8 +14,9 @@ import javax.net.ssl.SSLServerSocketFactory
 /**
  * Owns the phone's TLS identity: a persistent RSA-2048 key pair plus a
  * self-signed certificate (via [SelfSignedCert]) in app-private storage.
- * The certificate is regenerated when absent, unverifiable, or when the
- * device's LAN addresses no longer appear in its subjectAltName — browsers
+ * The certificate is regenerated when absent, unverifiable, no longer
+ * matches the stored key pair, or when the device's LAN addresses no longer
+ * appear in its subjectAltName — browsers
  * match https URLs against SAN entries, so a network move needs a new cert
  * and a one-tap browser exception. Every served certificate also carries the
  * fixed DNS SAN [STABLE_HOST] (`lenscast.local`), so bookmarks using that
@@ -41,14 +42,19 @@ class TlsCertManager(private val context: Context) {
 
     /**
      * The current identity, generating or regenerating as needed.
-     * [currentIps] should be the device's live LAN addresses.
+     * [currentIps] should be the device's live LAN addresses. IPv4 and IPv6
+     * SANs compare in canonical form: the interfaces spell IPv6 addresses
+     * compressed/expanded and with zone suffixes, and a raw string compare
+     * treated every start as a network move (regenerating the certificate,
+     * and with it the fingerprint, on every TLS apply).
      */
     fun identity(currentIps: List<String>): Identity {
         synchronized(lock) {
+            val wanted = canonicalIps(currentIps)
             cached?.let { existing ->
-                val sans = certificateIps(existing.certificate)
-                if (currentIps.all { sans.contains(it) }) return existing
-                Log.d(TAG, "LAN addresses changed $sans -> $currentIps; regenerating certificate")
+                val sans = canonicalIps(certificateIps(existing.certificate))
+                if (sans.containsAll(wanted)) return existing
+                Log.d(TAG, "LAN addresses changed $sans -> $wanted; regenerating certificate")
             }
             val identity = loadOrCreate(currentIps)
             cached = identity
@@ -69,15 +75,28 @@ class TlsCertManager(private val context: Context) {
     private fun loadOrCreate(currentIps: List<String>): Identity {
         ensureTlsDirectory()
         val keyPair = loadOrCreateKey()
+        // Only literal addresses can become SAN bytes; hostnames carry no
+        // iPAddress entry and would otherwise force a regeneration on every
+        // load. Deduplicate so an interface alias list does not inflate the
+        // certificate.
+        val encodableIps = currentIps.filter { canonicalIp(it) != null }.distinct()
+        val wanted = canonicalIps(encodableIps)
         val certDer = certFile.takeIf { it.exists() }?.readBytes()
         val certificate = certDer?.let { der ->
             runCatching { SelfSignedCert.parse(der) }.getOrNull()
-                ?.takeIf { cert -> currentIps.all { certificateIps(cert).contains(it) } }
+                ?.takeIf { cert ->
+                    // The keystore can be rebuilt independently (unreadable
+                    // p12): a stale DER paired with the new private key would
+                    // serve a certificate whose key does not match, failing
+                    // every handshake. Regenerate whenever they disagree.
+                    publicKeysMatch(cert, keyPair) &&
+                        canonicalIps(certificateIps(cert)).containsAll(wanted)
+                }
         }
         val finalCert = certificate ?: run {
             val created = SelfSignedCert.generate(
                 keyPair,
-                ipAddresses = currentIps,
+                ipAddresses = encodableIps,
                 dnsNames = listOf(STABLE_HOST),
             )
             certFile.writeBytes(created)
@@ -144,12 +163,50 @@ class TlsCertManager(private val context: Context) {
             ?.mapNotNull { entry ->
                 @Suppress("UNCHECKED_CAST")
                 val list = entry as List<Any>
-                if ((list[0] as Int) == 7) list[1] as String else null
+                if ((list[0] as Int) != 7) return@mapNotNull null
+                when (val value = list[1]) {
+                    is String -> value
+                    // Some providers hand back the DER bytes rather than the
+                    // textual form; canonicalize through InetAddress either way.
+                    is ByteArray -> runCatching { java.net.InetAddress.getByAddress(value).hostAddress }.getOrNull()
+                    else -> null
+                }
             }
             ?: emptyList()
     } catch (_: Exception) {
         emptyList()
     }
+
+    /**
+     * The canonical spelling of a literal IP address — zones stripped and
+     * IPv6 expanded by [java.net.InetAddress] — so the interface list and the
+     * parsed SANs compare equal. Null for non-IP values.
+     */
+    private fun canonicalIp(value: String): String? {
+        val literal = value.trim().substringBefore('%')
+        val looksIpv4 = literal.contains('.') && !literal.contains(':')
+        val looksIpv6 = literal.contains(':')
+        if (!looksIpv4 && !looksIpv6) return null
+        if (looksIpv4) {
+            val parts = literal.split(".")
+            if (parts.size != 4) return null
+            for (part in parts) {
+                val octet = part.toIntOrNull() ?: return null
+                if (octet !in 0..255) return null
+            }
+        }
+        val address = runCatching { java.net.InetAddress.getByName(literal) }.getOrNull() ?: return null
+        val bytes = address.address
+        if (bytes.size != 4 && bytes.size != 16) return null
+        return address.hostAddress?.substringBefore('%') ?: literal
+    }
+
+    private fun canonicalIps(values: List<String>): Set<String> =
+        values.mapNotNull { canonicalIp(it) }.toSet()
+
+    private fun publicKeysMatch(certificate: X509Certificate, keyPair: KeyPair): Boolean = runCatching {
+        certificate.publicKey.encoded.contentEquals(keyPair.public.encoded)
+    }.getOrDefault(false)
 
     private val keyFile: File get() = File(context.filesDir, "tls/lenscast.p12")
     private val certFile: File get() = File(context.filesDir, "tls/lenscast.der")

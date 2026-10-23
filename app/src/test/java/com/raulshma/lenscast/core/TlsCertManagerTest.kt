@@ -3,6 +3,7 @@ package com.raulshma.lenscast.core
 import android.content.Context
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,5 +61,56 @@ class TlsCertManagerTest {
 
         assertTrue(File(context.filesDir, "tls/lenscast.der").exists())
         assertTrue(regenerated.fingerprint != original.fingerprint)
+    }
+
+    @Test
+    fun `a missing key store regenerates a certificate matching the new key pair`() {
+        val context: Context = RuntimeEnvironment.getApplication()
+        val first = TlsCertManager(context).identity(listOf("127.0.0.1"))
+
+        // The p12 is lost while the DER survives (a fresh process loads the
+        // pair independently): reusing the old certificate would bind a
+        // factory whose private key does not match it.
+        File(context.filesDir, "tls/lenscast.p12").delete()
+        val second = TlsCertManager(context).identity(listOf("127.0.0.1"))
+
+        assertNotEquals(first.fingerprint, second.fingerprint)
+        // The served certificate and key agree: the factory opens and the
+        // certificate verifies against its own embedded public key.
+        val certificate = SelfSignedCert.parse(File(context.filesDir, "tls/lenscast.der").readBytes())
+        certificate.verify(certificate.publicKey)
+        second.serverSocketFactory.createServerSocket().close()
+    }
+
+    @Test
+    fun `identity is stable across equivalent IPv6 spellings and zone suffixes`() {
+        val context: Context = RuntimeEnvironment.getApplication()
+        val manager = TlsCertManager(context)
+
+        val first = manager.identity(listOf("127.0.0.1", "fe80::1%wlan0", "2001:db8::a"))
+        // Same addresses, expanded and without the interface zone: the
+        // identity must not regenerate (a fingerprint flip on every server
+        // recreate is the reported HTTPS symptom).
+        val second = manager.identity(
+            listOf("127.0.0.1", "fe80:0:0:0:0:0:0:1", "2001:db8:0:0:0:0:0:a"),
+        )
+
+        assertEquals(first.fingerprint, second.fingerprint)
+    }
+
+    @Test
+    fun `identity regenerates when a new LAN address appears`() {
+        val context: Context = RuntimeEnvironment.getApplication()
+        val manager = TlsCertManager(context)
+        val original = manager.identity(listOf("127.0.0.1"))
+
+        val moved = manager.identity(listOf("127.0.0.1", "192.168.1.77"))
+
+        assertNotEquals(original.fingerprint, moved.fingerprint)
+        val sans = moved.certificate.subjectAlternativeNames
+            ?.filter { (it[0] as Int) == 7 }
+            ?.map { it[1] as String }
+            ?: emptyList()
+        assertTrue(sans.any { it.contains("192.168.1.77") })
     }
 }

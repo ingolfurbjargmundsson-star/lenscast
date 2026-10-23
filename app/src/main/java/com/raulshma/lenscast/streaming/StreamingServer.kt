@@ -133,6 +133,14 @@ class StreamingServer(
 
     fun setWebStreamingEnabled(enabled: Boolean) = mjpegPump.setEnabled(enabled)
 
+    /**
+     * Tells every open dashboard that the listener about to replace this one
+     * speaks [scheme] (http/https), so the page can reload onto it instead of
+     * sitting on a dead socket after a TLS toggle. True when a dashboard was
+     * actually listening.
+     */
+    fun notifyTransportSwitch(scheme: String): Boolean = sseStatusStream.notifyTransportSwitch(scheme)
+
     fun getClientCount(): Int = mjpegPump.getClientCount()
 
     fun httpClientIds(): List<String> = mjpegPump.clientIds()

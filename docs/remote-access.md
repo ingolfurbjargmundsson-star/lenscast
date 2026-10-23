@@ -33,7 +33,10 @@ Two toggles change how these URLs behave:
   and TLS-listener never run at the same time). The listener binds the
   dual-stack `::` address, so IPv4 and IPv6 clients reach both `rtsp://` and
   `rtsps://` URLs. The certificate's SHA-256 fingerprint is shown on the
-  in-app Connect sheet for one-tap verification.
+  in-app Connect sheet for one-tap verification. Open dashboard tabs follow
+  the toggle: the server announces the new scheme over the status stream just
+  before restarting, and the page reloads onto it (accept the self-signed
+  warning once per browser when first moving to HTTPS).
 - **Stream auth** (off by default): when enabled, `/api/*`, `/stream`,
   `/audio`, `/snapshot`, `/hls/*`, and `/ws/*` require a session obtained by
   logging in

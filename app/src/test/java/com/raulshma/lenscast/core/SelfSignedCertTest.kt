@@ -73,4 +73,36 @@ class SelfSignedCertTest {
         assertEquals(emptyList<String>(), TlsCertManagerTestHelper.subjectDnsNames(cert))
         assertEquals(listOf("127.0.0.1"), TlsCertManagerTestHelper.subjectIps(cert))
     }
+
+    @Test
+    fun `IPv6 SANs encode zone-stripped literals and embedded IPv4 literals`() {
+        val der = SelfSignedCert.generate(
+            keyPair(),
+            ipAddresses = listOf("fe80::1%wlan0", "2001:db8::a", "::ffff:192.168.1.19"),
+        )
+        val cert = SelfSignedCert.parse(der)
+        // Compare canonical host addresses: platforms differ on whether the
+        // parsed SAN text is compressed or fully expanded.
+        val sans = TlsCertManagerTestHelper.subjectIps(cert).map(::canonicalHost)
+        assertEquals(
+            listOf("fe80::1", "2001:db8::a", "::ffff:192.168.1.19").map(::canonicalHost),
+            sans,
+        )
+    }
+
+    @Test
+    fun `unencodable address entries are skipped without dropping valid SANs`() {
+        val der = SelfSignedCert.generate(
+            keyPair(),
+            ipAddresses = listOf("not-an-ip", "192.168.1.50", "fe80::"),
+        )
+        val cert = SelfSignedCert.parse(der)
+        assertEquals(
+            listOf("192.168.1.50", "fe80::").map(::canonicalHost),
+            TlsCertManagerTestHelper.subjectIps(cert).map(::canonicalHost),
+        )
+    }
+
+    private fun canonicalHost(value: String): String =
+        java.net.InetAddress.getByName(value.substringBefore('%')).hostAddress?.substringBefore('%') ?: value
 }

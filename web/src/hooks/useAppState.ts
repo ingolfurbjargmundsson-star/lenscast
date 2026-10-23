@@ -5,6 +5,7 @@ import { createLiveAudioPlayer, type LiveAudioStatus } from '../audio/LiveAudioP
 import { createPollLadder } from './pollLadder'
 import { hashRouter, type RouteName } from '../lib/router'
 import { createSectionedDebouncer } from '../lib/sectionedDebounce'
+import { transportSwitchUrl } from '../lib/transportSwitch'
 import { closeMedia, openMedia, viewerTarget } from '../lib/viewerStore'
 import { hlsSupported, nextPlayerMode, whepSupported, type PlayerMode } from '../video/playerLadder'
 import { h264Supported } from '../video/h264Player'
@@ -22,6 +23,11 @@ const CONNECTION_LOST_FAILURES = 3
 // second, so five seconds of silence (open socket or not) counts as a dead
 // lane and hands telemetry back to the poll ladder.
 const SSE_STALE_MS = 5_000
+// The server announces an HTTP/HTTPS switch just before it restarts the
+// listener, then rebinds within a couple hundred milliseconds. Waiting a
+// little longer before navigating keeps the reload from landing on the closed
+// port (the browser would show a connection error page with no JS to retry).
+const TRANSPORT_SWITCH_DELAY_MS = 1_500
 
 export function useAppState() {
   // ── Auth ──
@@ -546,6 +552,24 @@ export function useAppState() {
       eventSource.onopen = () => { lastSseEventAt = Date.now(); setSseConnected(true) }
       eventSource.onerror = () => setSseConnected(false)
       eventSource.addEventListener('status', () => { lastSseEventAt = Date.now() })
+      // The TLS toggle restarts the listener under the other scheme. Follow
+      // it: the page reloads onto the same host/port/path once the new
+      // listener has had time to bind. A page already on the announced
+      // scheme (the event raced its own reload) stays put.
+      let transportSwitchScheduled = false
+      eventSource.addEventListener('transport', (ev) => {
+        if (transportSwitchScheduled) return
+        let scheme: unknown
+        try {
+          scheme = (JSON.parse((ev as MessageEvent).data) as { scheme?: unknown }).scheme
+        } catch {
+          return
+        }
+        const target = transportSwitchUrl(window.location.href, scheme)
+        if (!target) return
+        transportSwitchScheduled = true
+        window.setTimeout(() => window.location.replace(target), TRANSPORT_SWITCH_DELAY_MS)
+      })
       onCleanup(() => eventSource?.close())
     } catch {
       eventSource = null

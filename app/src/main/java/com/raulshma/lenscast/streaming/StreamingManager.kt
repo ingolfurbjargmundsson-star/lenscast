@@ -261,7 +261,17 @@ class StreamingManager(
     // receives this one shared instance at construction.
     private val webAuthGate = WebAuthGate(sessionPersistence = AuthSessionStore(context))
 
-    private var server: StreamingServer = createServer(StreamDefaults.WEB_PORT)
+    // The server lifecycle (create / start / stop / replace) is serialized:
+    // the Settings Applier's port and TLS writers run on the shared app scope,
+    // so an unsynchronized create-then-start race could leave the manager
+    // holding an unstarted instance while the old socket is still bound — the
+    // state desync that made an HTTPS toggle fail with EADDRINUSE.
+    private val serverLock = Any()
+    @Volatile private var server: StreamingServer = createServer(StreamDefaults.WEB_PORT)
+    // The instance that actually owns the listening socket: null while
+    // stopped. [server] is the intended next instance, which may be newer than
+    // the one serving if a replacement is being applied.
+    @Volatile private var startedServer: StreamingServer? = null
     private val webStreamingActive = AtomicBoolean(false)
     private val jpegQuality = AtomicInteger(StreamDefaults.JPEG_QUALITY)
     private val streamAudioEnabled = AtomicBoolean(true)
@@ -536,10 +546,11 @@ class StreamingManager(
         return ConnectInfo(
             httpUrl = buildVideoUrl(),
             audioUrl = _audioStreamUrl.value.ifBlank { buildAudioUrl() },
-            hlsUrl = NetworkUtils.getHlsPlaylistUrl(currentPort) ?: "${if (tlsEnabled) "https" else "http"}://localhost:$currentPort/hls/playlist.m3u8",
+            hlsUrl = NetworkUtils.getHlsPlaylistUrl(currentPort, ssl = tlsEnabled) ?: "${if (tlsEnabled) "https" else "http"}://localhost:$currentPort/hls/playlist.m3u8",
             rtspUrl = rtspOutput.url().ifBlank {
                 val host = NetworkUtils.formatHostForUrl(httpIp ?: "localhost")
-                "rtsp://$host:${rtspOutput.port()}/${RtspUriPolicy.DEFAULT_STREAM_PATH}"
+                val scheme = if (tlsEnabled) "rtsps" else "rtsp"
+                "$scheme://$host:${rtspOutput.port()}/${RtspUriPolicy.DEFAULT_STREAM_PATH}"
             },
             httpClients = try {
                 server.getClientCount()
@@ -737,19 +748,21 @@ class StreamingManager(
             Log.w(TAG, "Cannot change port while streaming")
             return
         }
-        if (port != currentPort) {
-            val restarted = recreateServerIfRunning {
-                currentPort = port
-                server = createServer(port)
-                _streamUrl.value = buildVideoUrl()
-                if (_isAudioStreaming.value) {
-                    _audioStreamUrl.value = buildAudioUrl()
+        synchronized(serverLock) {
+            if (port != currentPort) {
+                val restarted = recreateServerIfRunning {
+                    currentPort = port
+                    server = createServer(port)
+                    _streamUrl.value = buildVideoUrl()
+                    if (_isAudioStreaming.value) {
+                        _audioStreamUrl.value = buildAudioUrl()
+                    }
                 }
+                if (restarted == false) {
+                    Log.e(TAG, "Failed to restart streaming server on new port $port")
+                }
+                Log.d(TAG, "Streaming port set to $port")
             }
-            if (restarted == false) {
-                Log.e(TAG, "Failed to restart streaming server on new port $port")
-            }
-            Log.d(TAG, "Streaming port set to $port")
         }
     }
 
@@ -758,17 +771,17 @@ class StreamingManager(
      * bounces the transport when it was already serving. Null means it was
      * not running (nothing restarted); otherwise the restart outcome.
      */
-    private inline fun recreateServerIfRunning(recreate: () -> Unit): Boolean? {
-        val wasRunning = _isServerRunning.value
+    private fun recreateServerIfRunning(recreate: () -> Unit): Boolean? = synchronized(serverLock) {
+        val wasRunning = startedServer != null
         if (wasRunning) {
             stopTransport()
-            _isServerRunning.value = false
         }
         recreate()
-        if (!wasRunning) return null
-        val restarted = server.startServer()
-        _isServerRunning.value = restarted
-        return restarted
+        if (!wasRunning) {
+            null
+        } else {
+            startServerLocked()
+        }
     }
 
     fun setAdaptiveBitrateEnabled(enabled: Boolean) {
@@ -878,18 +891,30 @@ class StreamingManager(
         HlsManager.setDvrSegments(segments)
     }
 
-    fun ensureServerRunning(): Boolean {
-        if (_isServerRunning.value) {
+    fun ensureServerRunning(): Boolean = synchronized(serverLock) {
+        if (startedServer != null) {
             if (_streamUrl.value.isBlank()) {
                 _streamUrl.value = buildVideoUrl()
             }
-            return true
+            return@synchronized true
         }
+        startServerLocked()
+    }
 
-        val started = server.startServer()
+    /**
+     * Starts [server] and records it as the live instance. The caller holds
+     * [serverLock]; the two entry points are [ensureServerRunning] and the
+     * restart path, so a socket can never be bound by an instance the manager
+     * does not remember.
+     */
+    private fun startServerLocked(): Boolean {
+        val candidate = server
+        val started = candidate.startServer()
         if (!started) {
+            _isServerRunning.value = false
             return false
         }
+        startedServer = candidate
         // The WHEP endpoint rides the web transport: its reap loop arms with
         // the server (sessions are created on demand by viewers).
         runCatching { whepServer.start() }
@@ -901,8 +926,20 @@ class StreamingManager(
     }
 
     /** One lever for "the transport stops": the HTTP server carrying HTTP and the /ws WebSocket routes alike. */
-    private fun stopTransport() {
-        server.stopServer()
+    private fun stopTransport() = synchronized(serverLock) {
+        val live = startedServer
+        startedServer = null
+        // Stop the instance that owns the socket. The intended instance is
+        // normally the same object; if a failed replacement left a different
+        // one behind, close it too so the port is always released before the
+        // next bind (the EADDRINUSE class this seam exists to prevent).
+        if (live != null) {
+            live.stopServer()
+        }
+        if (server !== live) {
+            server.stopServer()
+        }
+        _isServerRunning.value = false
         // WHEP sessions live on the web transport: every viewer's peer
         // connection dies with it (the WebSocket routes' rule).
         runCatching { whepServer.stop() }
@@ -1724,20 +1761,41 @@ class StreamingManager(
      * gate survives, so dashboards stay logged in. The RTSP listener follows
      * the same toggle — a live output restarts so the next accept is TLS
      * (clients use rtsps:// on the same port) or plain rtsp again.
+     *
+     * Runs under [serverLock]: the transport lifecycle must never interleave
+     * with a concurrent port apply (the two share the same replace cycle).
+     * Advertised URLs are rebuilt from the new scheme, so clients are never
+     * handed an https URL for a plain server (or the reverse).
      */
     fun setTlsEnabled(enabled: Boolean) {
-        if (tlsEnabled == enabled) return
-        tlsEnabled = enabled
-        val restarted = recreateServerIfRunning {
-            server = createServer(currentPort)
-        }
-        if (restarted != null) {
-            Log.d(TAG, "TLS ${if (enabled) "enabled" else "disabled"}; server restart=$restarted")
+        synchronized(serverLock) {
+            if (tlsEnabled == enabled) return
+            val scheme = if (enabled) "https" else "http"
+            // An open dashboard's SSE connection cannot survive the transport
+            // restart under a different scheme — announce the destination
+            // first, then give the writers a beat to flush the frame before
+            // the old listener is torn down. The page waits a little longer
+            // before navigating, so it lands on the replacement listener.
+            val live = startedServer
+            if (live != null && live.notifyTransportSwitch(scheme)) {
+                Thread.sleep(TRANSPORT_SWITCH_FLUSH_MS)
+            }
+            tlsEnabled = enabled
+            recreateServerIfRunning {
+                server = createServer(currentPort)
+            }
+            if (_streamUrl.value.isNotBlank()) {
+                _streamUrl.value = buildVideoUrl()
+            }
+            if (_isAudioStreaming.value) {
+                _audioStreamUrl.value = buildAudioUrl()
+            }
         }
         if (rtspOutput.isActive()) {
             rtspOutput.stop()
             rtspOutput.start()
         }
+        Log.d(TAG, "TLS ${if (enabled) "enabled" else "disabled"}")
     }
 
     /** The RTSP listener's TLS factory while HTTPS mode is on; null keeps it plain. */
@@ -1891,11 +1949,13 @@ class StreamingManager(
     }
 
     private fun buildVideoUrl(): String {
-        return NetworkUtils.getStreamingUrl(currentPort) ?: "${if (tlsEnabled) "https" else "http"}://localhost:$currentPort/stream"
+        return NetworkUtils.getStreamingUrl(currentPort, ssl = tlsEnabled)
+            ?: "${if (tlsEnabled) "https" else "http"}://localhost:$currentPort/stream"
     }
 
     private fun buildAudioUrl(): String {
-        return NetworkUtils.getAudioUrl(currentPort) ?: "${if (tlsEnabled) "https" else "http"}://localhost:$currentPort/audio"
+        return NetworkUtils.getAudioUrl(currentPort, ssl = tlsEnabled)
+            ?: "${if (tlsEnabled) "https" else "http"}://localhost:$currentPort/audio"
     }
 
     /**
@@ -1916,6 +1976,13 @@ class StreamingManager(
 
         /** Poll cadence of the adaptive encoded-bitrate evaluation loop. */
         private const val ENCODED_ADAPTIVE_INTERVAL_MS = 2_000L
+
+        /**
+         * Grace between announcing a TLS scheme switch to open dashboards and
+         * stopping the old listener — long enough for the SSE writer threads
+         * to flush the notice onto the socket.
+         */
+        private const val TRANSPORT_SWITCH_FLUSH_MS = 300L
 
         /** The Web API audit trail, inside app-private files. */
         private const val AUDIT_LOG_FILE = "audit_log.json"

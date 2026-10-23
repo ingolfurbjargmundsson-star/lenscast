@@ -49,18 +49,22 @@ class SettingsApplier(
             }
         }
 
-        // Port + server startup
+        // Port + TLS mode + startup: one ordered sequence per emission. Both
+        // settings drive the same stop → recreate → start transport cycle, so
+        // two concurrent collectors could interleave a plain-HTTP start with
+        // the TLS replacement and leave the socket bound to an instance the
+        // manager no longer tracks (the EADDRINUSE desync). TLS lands first so
+        // the recreated server is already secure when the port apply runs.
         scope.launch {
-            settingsDataStore.streamingPort.collectLatest { port ->
-                streamingManager.setPort(port)
+            combine(
+                settingsDataStore.streamingPort,
+                settingsDataStore.httpsEnabled,
+            ) { port, https ->
+                ServerSettings(port, https)
+            }.collectLatest { server ->
+                streamingManager.setTlsEnabled(server.https)
+                streamingManager.setPort(server.port)
                 streamingManager.ensureServerRunning()
-            }
-        }
-
-        // TLS mode: a stop → recreate → start cycle behind the manager's seam.
-        scope.launch {
-            settingsDataStore.httpsEnabled.collectLatest { enabled ->
-                streamingManager.setTlsEnabled(enabled)
             }
         }
 
@@ -459,6 +463,8 @@ class SettingsApplier(
     )
 
     private data class RotationSetting(val degrees: Int, val locked: Boolean)
+
+    private data class ServerSettings(val port: Int, val https: Boolean)
 
     private data class QualityOverlaySettings(
         val quality: Int,

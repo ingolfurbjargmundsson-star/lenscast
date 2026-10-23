@@ -99,6 +99,27 @@ class SseClientPumpTest {
         gate.countDown()
     }
 
+    @Test
+    fun `broadcast delivers a frame to every live session and reports whether any listened`() {
+        val pump = SseClientPump(writerThreadName = "t")
+        val gate = CountDownLatch(1)
+        val a = openLiveSession(pump, gate)
+        val b = openLiveSession(pump, gate)
+        // Drain each session's opening retry hint before the broadcast.
+        assertEquals("retry: 3000\n\n", readFully(a, "retry: 3000\n\n".length))
+        assertEquals("retry: 3000\n\n", readFully(b, "retry: 3000\n\n".length))
+
+        val frame = "event: transport\ndata: {\"scheme\":\"https\"}\n\n"
+        assertTrue("a live session must report delivery", pump.broadcast(frame))
+        assertEquals(frame, readFully(a, frame.length))
+        assertEquals(frame, readFully(b, frame.length))
+
+        a.close()
+        b.close()
+        gate.countDown()
+        assertFalse("closed sessions must not report delivery", pump.broadcast(frame))
+    }
+
     // ── framing ──
 
     @Test
