@@ -11,8 +11,18 @@ export function transportSwitchUrl(href: string, scheme: unknown): string | null
   if (scheme !== 'http' && scheme !== 'https') return null
   try {
     const url = new URL(href)
+    // Only a dashboard served over HTTP can be switched; a non-web href
+    // (mailto:, a custom scheme) has no listener to navigate to.
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
     if (url.protocol === `${scheme}:`) return null
+    // URL normalizes a scheme's default port away (`:80` on http, `:443` on
+    // https), but the *other* scheme does not consider it default. Read the
+    // port off the raw authority so a page served on :80 stays on :80 after
+    // switching to https instead of silently moving to :443.
+    const authority = href.slice(href.indexOf('://') + 3).split(/[/?#]/, 1)[0] ?? ''
+    const explicitPort = /:(\d+)$/.exec(authority)?.[1]
     url.protocol = `${scheme}:`
+    if (explicitPort) url.port = explicitPort
     return url.toString()
   } catch {
     return null

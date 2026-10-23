@@ -546,14 +546,19 @@ class StreamingManager(
         return ConnectInfo(
             httpUrl = buildVideoUrl(),
             audioUrl = _audioStreamUrl.value.ifBlank { buildAudioUrl() },
-            hlsUrl = NetworkUtils.getHlsPlaylistUrl(currentPort, ssl = tlsEnabled) ?: "${if (tlsEnabled) "https" else "http"}://localhost:$currentPort/hls/playlist.m3u8",
+            hlsUrl = NetworkUtils.getHlsPlaylistUrl(currentPort, ssl = tlsEnabled) ?: "${currentScheme()}://localhost:$currentPort/hls/playlist.m3u8",
             rtspUrl = rtspOutput.url().ifBlank {
                 val host = NetworkUtils.formatHostForUrl(httpIp ?: "localhost")
-                val scheme = if (tlsEnabled) "rtsps" else "rtsp"
+                // The web identity and the RTSP identity share TlsCertManager,
+                // but a factory failure at RTSP start keeps the listener plain:
+                // advertise rtsps only when that factory can actually be built.
+                val scheme = if (tlsEnabled && rtspTlsFactory() != null) "rtsps" else "rtsp"
                 "$scheme://$host:${rtspOutput.port()}/${RtspUriPolicy.DEFAULT_STREAM_PATH}"
             },
             httpClients = try {
-                server.getClientCount()
+                // The live instance owns the clients; `server` may be a
+                // replacement that has not bound yet.
+                (startedServer ?: server).getClientCount()
             } catch (_: Exception) {
                 _clientCount.value
             },
@@ -562,7 +567,7 @@ class StreamingManager(
     }
 
     fun getHttpClientIds(): List<String> = try {
-        server.httpClientIds()
+        (startedServer ?: server).httpClientIds()
     } catch (_: Exception) {
         emptyList()
     }
@@ -750,9 +755,18 @@ class StreamingManager(
         }
         synchronized(serverLock) {
             if (port != currentPort) {
+                // Build the replacement (and resolve any TLS fallback) before
+                // the old listener is stopped, so the scheme announced below
+                // is the one the replacement will really speak.
+                val schemeBefore = currentScheme()
+                val candidate = createServer(port)
+                val schemeAfter = currentScheme()
+                if (schemeAfter != schemeBefore) {
+                    startedServer?.notifyTransportSwitch(schemeAfter)
+                }
                 val restarted = recreateServerIfRunning {
                     currentPort = port
-                    server = createServer(port)
+                    server = candidate
                     _streamUrl.value = buildVideoUrl()
                     if (_isAudioStreaming.value) {
                         _audioStreamUrl.value = buildAudioUrl()
@@ -773,9 +787,11 @@ class StreamingManager(
      */
     private fun recreateServerIfRunning(recreate: () -> Unit): Boolean? = synchronized(serverLock) {
         val wasRunning = startedServer != null
-        if (wasRunning) {
-            stopTransport()
-        }
+        // Release the old instance even when it never reported running: a
+        // failed start can still hold its socket (NanoHTTPD binds before it
+        // reports the failure), and the replacement's bind would answer
+        // EADDRINUSE. stopTransport is a no-op for a cleanly-stopped instance.
+        stopTransport()
         recreate()
         if (!wasRunning) {
             null
@@ -911,6 +927,9 @@ class StreamingManager(
         val candidate = server
         val started = candidate.startServer()
         if (!started) {
+            // Release whatever the failed attempt grabbed so the next
+            // ensureServerRunning retries on a clean socket.
+            candidate.stopServer()
             _isServerRunning.value = false
             return false
         }
@@ -986,7 +1005,6 @@ class StreamingManager(
         stopSrtStreaming()
         stopTransport()
         unregisterMdnsService()
-        _isServerRunning.value = false
         Log.d(TAG, "Streaming stopped")
     }
 
@@ -1762,27 +1780,39 @@ class StreamingManager(
      * the same toggle — a live output restarts so the next accept is TLS
      * (clients use rtsps:// on the same port) or plain rtsp again.
      *
-     * Runs under [serverLock]: the transport lifecycle must never interleave
-     * with a concurrent port apply (the two share the same replace cycle).
-     * Advertised URLs are rebuilt from the new scheme, so clients are never
-     * handed an https URL for a plain server (or the reverse).
+     * The web transport runs under [serverLock]: the lifecycle must never
+     * interleave with a concurrent port apply (the two share the same replace
+     * cycle). The RTSP bounce follows outside the lock, guarded by
+     * [rtspOutput]'s own lifecycle atomics, so an audio bind cannot stall the
+     * web transport. Advertised URLs are rebuilt from the new scheme, so
+     * clients are never handed an https URL for a plain server (or the
+     * reverse).
      */
     fun setTlsEnabled(enabled: Boolean) {
         synchronized(serverLock) {
             if (tlsEnabled == enabled) return
-            val scheme = if (enabled) "https" else "http"
-            // An open dashboard's SSE connection cannot survive the transport
-            // restart under a different scheme — announce the destination
-            // first, then give the writers a beat to flush the frame before
-            // the old listener is torn down. The page waits a little longer
-            // before navigating, so it lands on the replacement listener.
-            val live = startedServer
-            if (live != null && live.notifyTransportSwitch(scheme)) {
-                Thread.sleep(TRANSPORT_SWITCH_FLUSH_MS)
-            }
+            val schemeBefore = currentScheme()
             tlsEnabled = enabled
-            recreateServerIfRunning {
-                server = createServer(currentPort)
+            // Resolve the replacement before announcing: createServer falls
+            // back to plain HTTP when the TLS identity cannot be built, and
+            // the notice must point dashboards at the scheme the listener will
+            // really speak. A fallback leaves the scheme unchanged, so no
+            // reload is announced.
+            val candidate = createServer(currentPort)
+            val schemeAfter = currentScheme()
+            if (schemeAfter != schemeBefore) {
+                // An open dashboard's SSE connection cannot survive the
+                // restart under a different scheme — announce the destination
+                // first, then let the notice reach the socket before the old
+                // listener is torn down. The wait is bounded and observes the
+                // flush; no fixed sleep holds the lifecycle lock.
+                startedServer?.notifyTransportSwitch(schemeAfter)
+            }
+            val restarted = recreateServerIfRunning {
+                server = candidate
+            }
+            if (restarted == false) {
+                Log.e(TAG, "Failed to restart streaming server for TLS ${if (tlsEnabled) "on" else "off"}")
             }
             if (_streamUrl.value.isNotBlank()) {
                 _streamUrl.value = buildVideoUrl()
@@ -1790,12 +1820,12 @@ class StreamingManager(
             if (_isAudioStreaming.value) {
                 _audioStreamUrl.value = buildAudioUrl()
             }
+            Log.d(TAG, "TLS ${if (tlsEnabled) "enabled" else "disabled"}; restart=$restarted")
         }
         if (rtspOutput.isActive()) {
             rtspOutput.stop()
             rtspOutput.start()
         }
-        Log.d(TAG, "TLS ${if (enabled) "enabled" else "disabled"}")
     }
 
     /** The RTSP listener's TLS factory while HTTPS mode is on; null keeps it plain. */
@@ -1948,14 +1978,16 @@ class StreamingManager(
         _isDetectionMicActive.value = detectionWantsMic && audioStarted
     }
 
+    private fun currentScheme(): String = if (tlsEnabled) "https" else "http"
+
     private fun buildVideoUrl(): String {
         return NetworkUtils.getStreamingUrl(currentPort, ssl = tlsEnabled)
-            ?: "${if (tlsEnabled) "https" else "http"}://localhost:$currentPort/stream"
+            ?: "${currentScheme()}://localhost:$currentPort/stream"
     }
 
     private fun buildAudioUrl(): String {
         return NetworkUtils.getAudioUrl(currentPort, ssl = tlsEnabled)
-            ?: "${if (tlsEnabled) "https" else "http"}://localhost:$currentPort/audio"
+            ?: "${currentScheme()}://localhost:$currentPort/audio"
     }
 
     /**
@@ -1976,13 +2008,6 @@ class StreamingManager(
 
         /** Poll cadence of the adaptive encoded-bitrate evaluation loop. */
         private const val ENCODED_ADAPTIVE_INTERVAL_MS = 2_000L
-
-        /**
-         * Grace between announcing a TLS scheme switch to open dashboards and
-         * stopping the old listener — long enough for the SSE writer threads
-         * to flush the notice onto the socket.
-         */
-        private const val TRANSPORT_SWITCH_FLUSH_MS = 300L
 
         /** The Web API audit trail, inside app-private files. */
         private const val AUDIT_LOG_FILE = "audit_log.json"

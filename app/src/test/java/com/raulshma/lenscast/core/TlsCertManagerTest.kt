@@ -1,6 +1,7 @@
 package com.raulshma.lenscast.core
 
 import android.content.Context
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -11,6 +12,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.File
+import java.security.KeyStore
 
 /**
  * The filesDir persistence path behind issue #8: a fresh install has no
@@ -75,10 +77,17 @@ class TlsCertManagerTest {
         val second = TlsCertManager(context).identity(listOf("127.0.0.1"))
 
         assertNotEquals(first.fingerprint, second.fingerprint)
-        // The served certificate and key agree: the factory opens and the
-        // certificate verifies against its own embedded public key.
+        // The served DER and the persisted PKCS12 entry must describe the
+        // same key pair: the certificate's public key is what the factory
+        // presents, and the keystore entry is the private key it signs with.
         val certificate = SelfSignedCert.parse(File(context.filesDir, "tls/lenscast.der").readBytes())
-        certificate.verify(certificate.publicKey)
+        val keyStore = KeyStore.getInstance("PKCS12").apply {
+            File(context.filesDir, "tls/lenscast.p12").inputStream().use {
+                load(it, "lenscast".toCharArray())
+            }
+        }
+        val stored = keyStore.getCertificate("lenscast")
+        assertArrayEquals(stored.publicKey.encoded, certificate.publicKey.encoded)
         second.serverSocketFactory.createServerSocket().close()
     }
 

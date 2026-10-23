@@ -401,6 +401,26 @@ fallback; the MJPEG Pump owns frame state, client bookkeeping, the enabled
 flag, and the multipart stream; the Media Responder owns gallery files with
 video ranges, snapshots, and the PCM audio stream.
 
+### Transport Scheme Switch
+**`streaming/SseStatusStream.kt`**, **`web/src/lib/transportSwitch.ts`** - the
+HTTPS toggle's cross-client handoff. Before the listener is replaced under
+the other scheme, the status stream broadcasts a one-shot `transport` event
+naming the scheme the replacement will really speak (resolved after the TLS
+identity build, so an identity fallback announces plain HTTP). An open
+dashboard reloads the same host, port, path and hash under that scheme
+instead of reconnecting to the dead listener. The broadcast is bounded and
+best-effort: a tab beyond the SSE client cap or with a stalled queue falls
+back to its own reconnect. The announcement is sent only when the scheme
+actually changes; a port-only apply stays silent.
+
+### IP Address Policy
+**`core/IpAddressPolicy.kt`** - the literal codec shared by the TLS identity:
+`toBytes` supplies the SAN address bytes, `canonical` supplies the comparison
+spelling. Zone suffixes are link-scope metadata and are stripped from both
+forms; malformed interface strings answer null instead of throwing. It is a
+codec, not a decision policy, despite the repo's policy naming convention -
+the two TLS call sites must agree on addressing, so the parsing lives once.
+
 ### ONVIF Device Service
 **`streaming/onvif/OnvifServer.kt`**, **`streaming/onvif/WsDiscoveryResponder.kt`**,
 **`streaming/onvif/OnvifResponses.kt`** — the ONVIF Profile S surface: SOAP

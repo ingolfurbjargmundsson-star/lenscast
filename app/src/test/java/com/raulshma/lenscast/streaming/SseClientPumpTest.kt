@@ -120,6 +120,26 @@ class SseClientPumpTest {
         assertFalse("closed sessions must not report delivery", pump.broadcast(frame))
     }
 
+    @Test
+    fun `flush observes reader consumption and times out on a session that never reads`() {
+        val pump = SseClientPump(writerThreadName = "t")
+        val gate = CountDownLatch(1)
+        val stalled = openLiveSession(pump, gate)
+        assertEquals("retry: 3000\n\n", readFully(stalled, "retry: 3000\n\n".length))
+
+        val frame = "event: transport\ndata: {\"scheme\":\"https\"}\n\n"
+        assertTrue(pump.broadcast(frame))
+        // Nothing has read the frame yet: queue delivery must not read as a
+        // flush, or the transport would close under an unwritten notice.
+        assertFalse(pump.flush(50))
+
+        assertEquals(frame, readFully(stalled, frame.length))
+        assertTrue("consumption is observable", pump.flush(1_000))
+
+        stalled.close()
+        gate.countDown()
+    }
+
     // ── framing ──
 
     @Test

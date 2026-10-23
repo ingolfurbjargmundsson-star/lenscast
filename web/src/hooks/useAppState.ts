@@ -556,9 +556,8 @@ export function useAppState() {
       // it: the page reloads onto the same host/port/path once the new
       // listener has had time to bind. A page already on the announced
       // scheme (the event raced its own reload) stays put.
-      let transportSwitchScheduled = false
+      let transportSwitchTimer: number | undefined
       eventSource.addEventListener('transport', (ev) => {
-        if (transportSwitchScheduled) return
         let scheme: unknown
         try {
           scheme = (JSON.parse((ev as MessageEvent).data) as { scheme?: unknown }).scheme
@@ -567,10 +566,19 @@ export function useAppState() {
         }
         const target = transportSwitchUrl(window.location.href, scheme)
         if (!target) return
-        transportSwitchScheduled = true
-        window.setTimeout(() => window.location.replace(target), TRANSPORT_SWITCH_DELAY_MS)
+        // A second notice supersedes the pending navigation (a rapid toggle
+        // back and forth), so the tab follows the newest scheme instead of
+        // landing on the one a stale timer captured.
+        if (transportSwitchTimer !== undefined) window.clearTimeout(transportSwitchTimer)
+        transportSwitchTimer = window.setTimeout(
+          () => window.location.replace(target),
+          TRANSPORT_SWITCH_DELAY_MS,
+        )
       })
-      onCleanup(() => eventSource?.close())
+      onCleanup(() => {
+        eventSource?.close()
+        if (transportSwitchTimer !== undefined) window.clearTimeout(transportSwitchTimer)
+      })
     } catch {
       eventSource = null
     }

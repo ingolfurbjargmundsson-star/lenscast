@@ -1,6 +1,7 @@
 package com.raulshma.lenscast.streaming
 
 import java.io.InputStream
+import java.util.Collections
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.ConcurrentHashMap
@@ -28,7 +29,8 @@ internal class SseClientPump(
     private val clients = AtomicInteger(0)
 
     /** Live sessions, so the server can push one frame to every open client. */
-    private val sessions = ConcurrentHashMap.newKeySet<SseSession>()
+    private val sessions: MutableSet<SseSession> =
+        Collections.newSetFromMap(ConcurrentHashMap<SseSession, Boolean>())
 
     /** Null when the client cap is reached — the transport answers 503. */
     fun open(body: SseSession.() -> Unit): InputStream? {
@@ -46,17 +48,37 @@ internal class SseClientPump(
 
     /**
      * Offers [text] to every live session (the transport lifecycle notices:
-     * a scheme switch cannot wait for the next content-loop tick). True when
-     * at least one client received the frame.
+     * a scheme switch cannot wait for the next content-loop tick). Each offer
+     * is bounded and may drop when that client's queue is full — the caller
+     * holds the transport lifecycle lock and must not be wedged by one stalled
+     * dashboard. True when the frame was queued for at least one client.
+     * [flush] observes consumption; this call does not wait for it.
      */
     fun broadcast(text: String): Boolean {
         var delivered = false
         for (session in sessions) {
             if (!session.isOpen) continue
-            session.enqueue(text)
-            delivered = true
+            if (session.offer(text, BROADCAST_OFFER_TIMEOUT_MS)) delivered = true
         }
         return delivered
+    }
+
+    /**
+     * Waits (bounded by [timeoutMs] overall) for the response readers to
+     * consume the frames already queued, so a caller that is about to close
+     * the transport can tell "written to the queue" from "handed to the
+     * HTTP response thread". False when at least one live session still had
+     * bytes queued at the deadline — a stalled dashboard.
+     */
+    fun flush(timeoutMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        for (session in sessions) {
+            if (!session.isOpen) continue
+            val remaining = deadline - System.currentTimeMillis()
+            if (remaining <= 0) return false
+            if (!session.awaitDrained(remaining)) return false
+        }
+        return true
     }
 
     inner class SseSession(private val body: SseSession.() -> Unit) : InputStream() {
@@ -67,17 +89,24 @@ internal class SseClientPump(
         private var offset = 0
         private val closed = AtomicBoolean(false)
         private val startMs = System.currentTimeMillis()
-
-        init {
-            // Register before the writer starts: a body that returns at once
-            // would otherwise close an untracked session and leave it in the
-            // broadcast set.
-            sessions.add(this)
-        }
+        private val pendingChunks = AtomicInteger(0)
 
         private val writer = Thread({ runSession() }, writerThreadName).apply {
             isDaemon = true
-            start()
+        }
+
+        init {
+            // Register before the writer starts: a body that returns at once
+            // would otherwise close an untracked session. If the thread cannot
+            // start, unregister before propagating so the broadcast set never
+            // holds a session no writer will ever drain.
+            sessions.add(this)
+            try {
+                writer.start()
+            } catch (t: Throwable) {
+                sessions.remove(this)
+                throw t
+            }
         }
 
         /** False once the client disconnected — every content loop checks it. */
@@ -94,8 +123,51 @@ internal class SseClientPump(
          * of an SSE stream is always safe.
          */
         fun enqueue(text: String) {
-            if (text.isEmpty()) return
-            queue.offer(text.toByteArray(Charsets.UTF_8), 1, TimeUnit.SECONDS)
+            offer(text, ENQUEUE_TIMEOUT_MS)
+        }
+
+        /**
+         * Bounded offer for out-of-band frames: false when the client's queue
+         * stayed full for [timeoutMs], so a caller holding a lifecycle lock
+         * pays a bounded price and knows whether the frame was handed over.
+         */
+        fun offer(text: String, timeoutMs: Long): Boolean {
+            if (text.isEmpty()) return false
+            // Convert before counting: a throw here must not leave a phantom
+            // pending chunk that [awaitDrained] would wait on.
+            val bytes = text.toByteArray(Charsets.UTF_8)
+            // Count before publishing: the reader may consume the chunk the
+            // instant it lands in the queue, and a late increment would leave
+            // [awaitDrained] waiting on a frame that is already on the wire.
+            pendingChunks.incrementAndGet()
+            val queued = try {
+                queue.offer(bytes, timeoutMs, TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                false
+            }
+            if (!queued) pendingChunks.decrementAndGet()
+            return queued
+        }
+
+        /**
+         * Waits until the response reader has consumed every queued frame, or
+         * [timeoutMs] elapses. Consumption still precedes NanoHTTPD's socket
+         * write, so callers leave a short grace before closing the transport.
+         */
+        fun awaitDrained(timeoutMs: Long): Boolean {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (pendingChunks.get() > 0) {
+                val remaining = deadline - System.currentTimeMillis()
+                if (remaining <= 0) return false
+                try {
+                    Thread.sleep(minOf(remaining, DRAIN_POLL_MS))
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return false
+                }
+            }
+            return true
         }
 
         override fun read(): Int {
@@ -114,7 +186,9 @@ internal class SseClientPump(
                     offset = 0
                     continue
                 }
-                return current[offset++].toInt() and 0xFF
+                val value = current[offset++].toInt() and 0xFF
+                if (offset >= current.size) pendingChunks.decrementAndGet()
+                return value
             }
         }
 
@@ -135,6 +209,7 @@ internal class SseClientPump(
                 System.arraycopy(current, offset, b, off + count, n)
                 offset += n
                 count += n
+                if (offset >= current.size) pendingChunks.decrementAndGet()
             }
             return count
         }
@@ -164,6 +239,19 @@ internal class SseClientPump(
     companion object {
         /** Both channels cap concurrency the same way; the transport answers 503 when full. */
         const val DEFAULT_MAX_CLIENTS = 4
+
+        /** Content-loop frames: a stalled reader drops one frame, not the stream. */
+        private const val ENQUEUE_TIMEOUT_MS = 1_000L
+
+        /**
+         * Out-of-band broadcast frames (the TLS switch notice) wait only
+         * briefly per client: the caller holds the server lifecycle lock, so
+         * one stalled dashboard must not pin the port apply behind it.
+         */
+        private const val BROADCAST_OFFER_TIMEOUT_MS = 100L
+
+        /** Poll cadence of [SseSession.awaitDrained]. */
+        private const val DRAIN_POLL_MS = 5L
 
         private const val MAX_LIFETIME_MS = 30 * 60 * 1000L
         private val EMPTY_CHUNK = ByteArray(0)

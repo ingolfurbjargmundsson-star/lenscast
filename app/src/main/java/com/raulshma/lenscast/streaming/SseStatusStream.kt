@@ -26,10 +26,27 @@ class SseStatusStream(
      * Pushes a one-shot `transport` event telling every open dashboard the
      * scheme of the listener replacing this one. Called before a TLS toggle
      * restarts the transport; the dashboard navigates to the same host, port
-     * and path under [scheme]. True when at least one client was connected.
+     * and path under [scheme]. True when the frame was queued for at least
+     * one open client.
+     *
+     * Waits (bounded) for the response readers to consume the frame, so the
+     * caller can tear the listener down without racing the write. A stalled
+     * client costs at most [FLUSH_TIMEOUT_MS], not an unbounded lock hold.
      */
-    fun notifyTransportSwitch(scheme: String): Boolean =
-        pump.broadcast("event: transport\ndata: {\"scheme\":\"$scheme\"}\n\n")
+    fun notifyTransportSwitch(scheme: String): Boolean {
+        // The frame is built by interpolation, so the wire vocabulary is
+        // enforced here rather than trusted from the caller.
+        if (scheme != "http" && scheme != "https") return false
+        val queued = pump.broadcast("event: transport\ndata: {\"scheme\":\"$scheme\"}\n\n")
+        if (queued) {
+            pump.flush(FLUSH_TIMEOUT_MS)
+            // Consumption happens on the response thread just before its
+            // socket write; give that write a beat before the listener closes.
+            runCatching { Thread.sleep(FLUSH_GRACE_MS) }
+                .onFailure { Thread.currentThread().interrupt() }
+        }
+        return queued
+    }
 
     /** Null when the client cap is reached — the transport answers 503. */
     fun open(): InputStream? = pump.open {
@@ -55,5 +72,11 @@ class SseStatusStream(
     private companion object {
         private const val DEFAULT_INTERVAL_MS = 1_000L
         private const val DISPATCH_TIMEOUT_MS = 5_000L
+
+        /** Overall budget for open dashboards to consume the switch notice. */
+        private const val FLUSH_TIMEOUT_MS = 300L
+
+        /** Post-consumption grace for NanoHTTPD's socket write to land. */
+        private const val FLUSH_GRACE_MS = 50L
     }
 }

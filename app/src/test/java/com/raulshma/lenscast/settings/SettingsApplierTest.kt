@@ -24,6 +24,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import io.mockk.verifyOrder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -304,6 +305,13 @@ class SettingsApplierTest {
             // ordered transport apply, which is idempotent for unchanged port.
             verify(exactly = 2) { streamingManager.setPort(8080) }
             verify(exactly = 2) { streamingManager.ensureServerRunning() }
+        }
+        // One collector, TLS first: this order is what keeps the port and TLS
+        // restart cycles from interleaving (the EADDRINUSE desync).
+        verifyOrder {
+            streamingManager.setTlsEnabled(true)
+            streamingManager.setPort(8080)
+            streamingManager.ensureServerRunning()
         }
     }
 

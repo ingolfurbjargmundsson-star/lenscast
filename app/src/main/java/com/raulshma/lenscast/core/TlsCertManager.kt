@@ -77,9 +77,11 @@ class TlsCertManager(private val context: Context) {
         val keyPair = loadOrCreateKey()
         // Only literal addresses can become SAN bytes; hostnames carry no
         // iPAddress entry and would otherwise force a regeneration on every
-        // load. Deduplicate so an interface alias list does not inflate the
-        // certificate.
-        val encodableIps = currentIps.filter { canonicalIp(it) != null }.distinct()
+        // load. Deduplicate canonical forms so an interface alias list
+        // (`fe80::1` and `fe80::1%wlan0`) does not inflate the certificate.
+        val encodableIps = currentIps
+            .filter { IpAddressPolicy.canonical(it) != null }
+            .distinctBy { IpAddressPolicy.canonical(it) }
         val wanted = canonicalIps(encodableIps)
         val certDer = certFile.takeIf { it.exists() }?.readBytes()
         val certificate = certDer?.let { der ->
@@ -178,31 +180,12 @@ class TlsCertManager(private val context: Context) {
     }
 
     /**
-     * The canonical spelling of a literal IP address — zones stripped and
-     * IPv6 expanded by [java.net.InetAddress] — so the interface list and the
-     * parsed SANs compare equal. Null for non-IP values.
+     * Compare the interface list and the parsed SANs in the canonical form
+     * [IpAddressPolicy] defines — zones stripped, IPv6 expanded — so the
+     * platform's spelling of the same address never reads as a network move.
      */
-    private fun canonicalIp(value: String): String? {
-        val literal = value.trim().substringBefore('%')
-        val looksIpv4 = literal.contains('.') && !literal.contains(':')
-        val looksIpv6 = literal.contains(':')
-        if (!looksIpv4 && !looksIpv6) return null
-        if (looksIpv4) {
-            val parts = literal.split(".")
-            if (parts.size != 4) return null
-            for (part in parts) {
-                val octet = part.toIntOrNull() ?: return null
-                if (octet !in 0..255) return null
-            }
-        }
-        val address = runCatching { java.net.InetAddress.getByName(literal) }.getOrNull() ?: return null
-        val bytes = address.address
-        if (bytes.size != 4 && bytes.size != 16) return null
-        return address.hostAddress?.substringBefore('%') ?: literal
-    }
-
     private fun canonicalIps(values: List<String>): Set<String> =
-        values.mapNotNull { canonicalIp(it) }.toSet()
+        values.mapNotNull { IpAddressPolicy.canonical(it) }.toSet()
 
     private fun publicKeysMatch(certificate: X509Certificate, keyPair: KeyPair): Boolean = runCatching {
         certificate.publicKey.encoded.contentEquals(keyPair.public.encoded)

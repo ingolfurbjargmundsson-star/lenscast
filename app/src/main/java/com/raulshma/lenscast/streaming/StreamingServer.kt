@@ -108,6 +108,14 @@ class StreamingServer(
 
     private var isRunning = false
 
+    /**
+     * True once [start] has been attempted, even if it failed. NanoHTTPD
+     * binds on its server thread before the call reports the failure, so a
+     * failed start can still own a socket; [stopServer] must run for it or
+     * the port stays held until the process dies.
+     */
+    private var startAttempted = false
+
     fun updateFrame(jpegData: ByteArray) = mjpegPump.updateFrame(jpegData)
 
     /**
@@ -136,8 +144,8 @@ class StreamingServer(
     /**
      * Tells every open dashboard that the listener about to replace this one
      * speaks [scheme] (http/https), so the page can reload onto it instead of
-     * sitting on a dead socket after a TLS toggle. True when a dashboard was
-     * actually listening.
+     * sitting on a dead socket after a TLS toggle. True when the notice was
+     * queued for at least one dashboard.
      */
     fun notifyTransportSwitch(scheme: String): Boolean = sseStatusStream.notifyTransportSwitch(scheme)
 
@@ -540,6 +548,7 @@ class StreamingServer(
     }
 
     fun startServer(): Boolean {
+        startAttempted = true
         return try {
             start()
             isRunning = true
@@ -552,13 +561,24 @@ class StreamingServer(
     }
 
     fun stopServer() {
-        if (isRunning) {
-            stop()
-            isRunning = false
-            // Sessions live in the manager-owned WebAuthGate — they survive a
-            // server recreation (e.g. a port change) by design.
-            Log.d(TAG, "Streaming server stopped")
-        }
+        // Release every instance a start was attempted for, not just the ones
+        // that reported running: a bind failure can leave the socket owned by
+        // an instance `isRunning` never saw, and the next create → bind would
+        // answer EADDRINUSE. stop() is only safe after start() touched the
+        // thread/socket, hence the attempt flag rather than a bare call.
+        if (!startAttempted && !isRunning) return
+        isRunning = false
+        runCatching { stop() }
+            .onSuccess {
+                // Clear the flag only after the socket release succeeded: a
+                // throwing stop must stay retryable, or the port leaks until
+                // the process dies.
+                startAttempted = false
+                // Sessions live in the manager-owned WebAuthGate — they survive
+                // a server recreation (e.g. a port change) by design.
+                Log.d(TAG, "Streaming server stopped")
+            }
+            .onFailure { Log.w(TAG, "Server stop failed", it) }
     }
 
     companion object {
