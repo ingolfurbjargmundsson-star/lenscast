@@ -1,0 +1,6 @@
+Since 0.1.6:
+• UnifiedPush: detection alerts can now reach a paired Android receiver through a UnifiedPush distributor - opt-in, end-to-end encrypted, and independent of browser Web Push
+• The web server now stays foreground between streams, so alert delivery is not blocked by Android's background-network firewall (adds only the normal FOREGROUND_SERVICE_CONNECTED_DEVICE permission)
+• HTTPS: toggling no longer fails with address-in-use, open dashboards follow the switch to the new scheme and port automatically, and the certificate keeps a stable identity across restarts
+• Localization: lens chips in all seven languages, telephoto lenses show their zoom ratio ("3x"), and the lens API exposes kind/zoomRatio
+• Security: solid-js 1.9.17 clears the seroval Dependabot alerts, and source-map-js is updated to 1.2.2
