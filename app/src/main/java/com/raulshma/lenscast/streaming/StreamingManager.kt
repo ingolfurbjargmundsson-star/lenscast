@@ -32,6 +32,7 @@ import com.raulshma.lenscast.streaming.web.SettingsWebHandler
 import com.raulshma.lenscast.streaming.web.StatusWebHandler
 import com.raulshma.lenscast.streaming.web.StreamWebHandler
 import com.raulshma.lenscast.streaming.web.SystemWebHandler
+import com.raulshma.lenscast.streaming.web.UnifiedPushWebHandler
 import com.raulshma.lenscast.streaming.hls.HlsManager
 import com.raulshma.lenscast.streaming.hls.TsPacketizer
 import com.raulshma.lenscast.streaming.rtmp.RtmpOutput
@@ -1789,6 +1790,10 @@ class StreamingManager(
             subscriptions = app.pushSubscriptionStore,
             vapidKeys = app.vapidKeys,
         )
+        val unifiedPushHandler = UnifiedPushWebHandler(
+            subscriptions = app.pushSubscriptionStore,
+            vapidKeys = app.vapidKeys,
+        )
         return WebApiStack(
             router = ApiRouter(
                 settings = SettingsWebHandler(
@@ -1815,6 +1820,7 @@ class StreamingManager(
                 auditLog = auditLog,
                 system = systemHandler,
                 push = pushHandler,
+                unifiedPush = unifiedPushHandler,
             ),
             gallery = gallery,
             status = statusHandler,
@@ -1827,6 +1833,7 @@ class StreamingManager(
             detectionTest = detectionTest,
             system = systemHandler,
             push = pushHandler,
+            unifiedPush = unifiedPushHandler,
         )
     }
 

@@ -139,6 +139,7 @@ class SettingsViewModel(
     val detectionNotificationsEnabled: StateFlow<Boolean> = settingsDataStore.detectionNotificationsEnabled
     val tamperDetectionEnabled: StateFlow<Boolean> = settingsDataStore.tamperDetectionEnabled
     val pushEnabled: StateFlow<Boolean> = settingsDataStore.pushEnabled
+    val unifiedPushEnabled: StateFlow<Boolean> = settingsDataStore.unifiedPushEnabled
     val pushVapidSubject: StateFlow<String> = settingsDataStore.pushVapidSubject
     val watchdogEnabled: StateFlow<Boolean> = settingsDataStore.watchdogEnabled
     val watchdogMaxRetries: StateFlow<Int> = settingsDataStore.watchdogMaxRetries
@@ -396,6 +397,9 @@ class SettingsViewModel(
 
     fun updatePushEnabled(enabled: Boolean) =
         save { settingsDataStore.savePushEnabled(enabled) }
+
+    fun updateUnifiedPushEnabled(enabled: Boolean) =
+        save { settingsDataStore.saveUnifiedPushEnabled(enabled) }
 
     fun updatePushVapidSubject(subject: String) =
         save { settingsDataStore.savePushVapidSubject(subject) }

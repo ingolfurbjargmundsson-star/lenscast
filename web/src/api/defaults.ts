@@ -136,6 +136,10 @@ export const API_DEFAULTS = {
   // master gate. Subscriptions are browser-session state via /api/push.
   pushEnabled: false,
 
+  // UnifiedPush alerts (StreamingSettingsDto.unifiedPushEnabled): an
+  // independent gate for paired receiver endpoints.
+  unifiedPushEnabled: false,
+
   // Detection suite extensions (StreamDefaults / StreamingSettingsDto)
   mlDetectionEnabled: false,
   mlMinScorePercent: 60,

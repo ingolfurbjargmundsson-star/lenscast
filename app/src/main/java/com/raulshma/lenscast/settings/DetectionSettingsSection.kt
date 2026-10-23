@@ -70,6 +70,7 @@ fun DetectionSettingsSection(viewModel: SettingsViewModel, onOpenEventLog: (() -
     val quietHoursEnd by viewModel.alertQuietHoursEndMinute.collectAsState()
     val tamperEnabled by viewModel.tamperDetectionEnabled.collectAsState()
     val pushEnabled by viewModel.pushEnabled.collectAsState()
+    val unifiedPushEnabled by viewModel.unifiedPushEnabled.collectAsState()
     val pushVapidSubject by viewModel.pushVapidSubject.collectAsState()
 
     SettingsSection(title = stringResource(R.string.detection_section_title)) {
@@ -310,6 +311,25 @@ fun DetectionSettingsSection(viewModel: SettingsViewModel, onOpenEventLog: (() -
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(modifier = Modifier.height(4.dp))
+        }
+        SwitchSetting(
+            title = stringResource(R.string.detection_unifiedpush),
+            checked = unifiedPushEnabled,
+            onCheckedChange = { viewModel.updateUnifiedPushEnabled(it) }
+        )
+        if (unifiedPushEnabled) {
+            // UnifiedPush targets are receiver endpoints registered through
+            // /api/push/unifiedpush (the web dashboard's card or a paired
+            // Android receiver). The camera is the publisher only — the
+            // receiver's distributor delivers the notification.
+            Text(
+                text = stringResource(R.string.detection_unifiedpush_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+        }
+        if (pushEnabled || unifiedPushEnabled) {
             // Live RFC 8292 sub check: the field saves per keystroke, and an
             // invalid sub only fails later at dispatch — every push service
             // rejects the JWT outright, so the mistake must be visible here.

@@ -43,9 +43,12 @@ Two toggles change how these URLs behave:
   a cookie (curl one-liners, Home Assistant's `still_image_url`), the settings
   can enable an API token: send it as `Authorization: Bearer <token>` or
   `X-Api-Token: <token>` and it authorizes GET and HEAD requests to the
-  protected routes plus POSTs on an explicit allow-list (stream, web-stream,
-  and RTSP start/stop, `/api/capture`, recording start/stop, the siren, and
-  the torch — the full list is in [NVR integration](nvr-integration.md)).
+  protected routes except `/api/auth/*` and the browser push subscription
+  list, plus POSTs on an explicit allow-list (stream, web-stream, and RTSP
+  start/stop, `/api/capture`, recording start/stop, the siren, the torch, and
+  UnifiedPush receiver pairing (`/api/push/unifiedpush` and
+  `/api/push/unifiedpush/remove` — see [UnifiedPush alerts](unifiedpush.md));
+  the full list is in [NVR integration](nvr-integration.md)).
   It never authorizes the auth/session routes, and never the WebSocket
   paths — those stay cookie-session-only. Token requests skip the
   cookie path's CSRF origin check: they are header-authenticated, so there

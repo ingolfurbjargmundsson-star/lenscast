@@ -36,6 +36,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!--
+      Server-only mode: the local camera server talks to browser/RTSP clients
+      over the network between streams, and the process must stay foreground
+      for outbound alert delivery. CHANGE_WIFI_MULTICAST_STATE (above) is one
+      of the platform's connected-device type prerequisites.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -99,7 +106,7 @@
             android:name=".streaming.StreamingService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="camera|microphone" />
+            android:foregroundServiceType="camera|microphone|connectedDevice" />
 
         <service
             android:name=".streaming.StreamTileService"

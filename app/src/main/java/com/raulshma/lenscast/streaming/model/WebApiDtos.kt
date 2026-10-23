@@ -277,6 +277,13 @@ data class StreamingSettingsDto(
      * settings document.
      */
     val pushEnabled: Boolean = false,
+    /**
+     * UnifiedPush alerts to registered receiver endpoints (an Android
+     * distributor or any UnifiedPush app): an independent master gate.
+     * Targets themselves are managed through the `/api/push/unifiedpush`
+     * routes, not this settings document.
+     */
+    val unifiedPushEnabled: Boolean = false,
     /** Capture retention window in days; 0 keeps captures forever. */
     val captureRetentionDays: Int = StreamDefaults.RETENTION_DAYS_DISABLED,
     /** Detection-event retention window in days; 0 keeps events forever. */
@@ -833,6 +840,57 @@ data class PushSubscriptionDto(
 data class PushSubscriptionsResponseDto(
     val subscriptions: List<PushSubscriptionDto>,
     val count: Int,
+)
+
+// ── UnifiedPush DTOs ──
+
+/**
+ * One registered UnifiedPush target on GET /api/push/unifiedpush. The
+ * endpoint is the target's capability URL (a deliver-to address), listed so
+ * a dashboard can remove it; the encryption key material never leaves the
+ * device. [instance] is the distributor instance the receiver registered on,
+ * [label] and [distributor] are informational.
+ */
+@JsonClass(generateAdapter = true)
+data class UnifiedPushTargetDto(
+    val endpoint: String,
+    val instance: String,
+    val label: String? = null,
+    val distributor: String? = null,
+    val createdAtMs: Long,
+)
+
+/**
+ * GET /api/push/unifiedpush answer: the registered targets plus the camera's
+ * VAPID public key, the value a receiver passes to
+ * `UnifiedPush.register(context, instance, vapid = …)`. [maxTargets] is the
+ * server's admission cap so a pairing client can fail early.
+ */
+@JsonClass(generateAdapter = true)
+data class UnifiedPushTargetsResponseDto(
+    val targets: List<UnifiedPushTargetDto>,
+    val count: Int,
+    val maxTargets: Int,
+    val vapidPublicKey: String,
+)
+
+/** POST /api/push/unifiedpush answer; [error] is human-readable on rejection. */
+@JsonClass(generateAdapter = true)
+data class UnifiedPushRegisterResponseDto(
+    val success: Boolean,
+    val count: Int = 0,
+    val error: String? = null,
+)
+
+/**
+ * POST /api/push/unifiedpush/remove answer. [success] means the request was
+ * well-formed (removal is idempotent, so a repeat retry still succeeds);
+ * [removed] reports whether a target was actually present.
+ */
+@JsonClass(generateAdapter = true)
+data class UnifiedPushRemoveResponseDto(
+    val success: Boolean = true,
+    val removed: Boolean = false,
 )
 
 // ── Detection Stats DTOs ──

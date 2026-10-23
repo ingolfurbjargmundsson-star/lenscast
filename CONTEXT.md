@@ -17,9 +17,23 @@ decision, backoff, verification, and state publishing). `begin()` also carries
 the foreground-service microphone verdict (web audio live *or* the RTSP output
 live with its track wanted — an RTSP-only capture without the MICROPHONE type
 is silenced by the OS) and re-asserts it when a second output starts late.
+The same foreground service has a server-only CONNECTED_DEVICE mode:
+`ensureServerForeground()` / `stopServerForegroundIfIdle()` keep the running
+web server (and its outbound alert delivery) out of the background-network
+firewall between streams; `end()` hands the one notification slot back to
+that mode when the server survives, or stops the service when it does not.
 Web API Stream
 Handler, CameraViewModel, and StreamWatchdog are one-call clients — none of
 them hand-roll the choreography anymore.
+
+### Server Foreground Controller
+**`streaming/ServerForegroundController.kt`** - maps
+`StreamingManager.isServerRunning` to the session's server-only foreground
+mode and provides the visible-resume `sync()` retry when Android denies a
+background foreground-service start. It owns only that runtime-state bridge;
+the session still owns every foreground intent and stream-mode transition.
+It is separate from Settings Applier because server state is runtime state,
+not a persisted setting.
 
 ### Settings Applier
 **`settings/SettingsApplier.kt`** — the single owner of "persisted settings →
@@ -153,7 +167,7 @@ during the wait wins.
 **`capture/DetectionCoordinator.kt`** — the single owner of the
 detection-event choreography: arm-schedule verdict, then dispatch — the
 bounded motion recording (started only from Idle) or the legacy auto-photo,
-the webhook/MQTT/Web-Push/local-notification fan-out, the auto-siren/auto-torch
+the webhook/MQTT/Web-Push/UnifiedPush/local-notification fan-out, the auto-siren/auto-torch
 deterrence behind its cooldown, and the persisted event-log entry, all
 reading one event-moment stamp and id so every sink reports the same
 identity. Sound events ride the same choreography behind their own persisted
@@ -453,13 +467,22 @@ EC keys can't do ECDH below API 31); `PushEncryption` is the pure RFC 8291
 `aes128gcm` payload ladder (ephemeral ECDH + HKDF-SHA256, 0x02 padding
 delimiter, the ephemeral public key riding the header's keyid) plus the RFC
 8292 VAPID signer (compact JWT, ES256 raw r‖s, `vapid t=…,k=…`);
-`PushSubscriptionStore` persists the browser subscriptions to
+`PushSubscriptionStore` persists one shared subscription file to
 `filesDir/push_subscriptions.json` (cloud-backup/device-transfer excluded,
-like the auth sessions) with endpoint dedupe and 404/410 pruning;
+like the auth sessions) with endpoint keys, per-row `browser`/`unifiedpush`
+kinds, endpoint dedupe, atomic `replacedEndpoint` rotation, and 404/410
+pruning that only removes a row whose key material still matches;
 `WebPushSender` is the fail-open sink beside the webhook/MQTT publishers —
-one daemon worker, one encrypted POST per subscription
-(`TTL`/`Urgency` headers, the live `pushEnabled` + `pushVapidSubject`
-settings read per dispatch), failures logged and never thrown.
+one daemon worker, one encrypted POST per subscription (`TTL`/`Urgency`/`Topic`
+headers, one ephemeral sender key per fan-out, a VAPID JWT cached per
+origin+subject, a 5 s transport timeout, a three-consecutive-transport-failure
+abort, and a 3993-byte cleartext cap that shortens only the body), the live
+`pushEnabled`/`unifiedPushEnabled` + `pushVapidSubject` settings read per
+dispatch, failures logged (origin only — an endpoint is a capability URL) and
+never thrown. `streaming/web/UnifiedPushWebHandler` is the receiver-facing
+registration surface (`GET /api/push/unifiedpush`, token-writable `POST` and
+`/remove`), while `PushWebHandler` stays session-only and kind-scoped to
+browser rows.
 
 ### Web API Handlers
 **`streaming/web/`** — the JSON-in/JSON-out surface behind the streaming
@@ -481,17 +504,21 @@ Controller), `GalleryWebHandler` (media resolution/thumbnails),
 `DeterrenceWebHandler` (the siren route), `DetectionEventsWebHandler` (the
 event log's list/clear plus the per-event JSON the SSE stream reuses),
 `DetectionTestWebHandler` (POST `/api/detection/test` — one synthetic
-`EventKind.TEST` alert through the webhook/MQTT/Web-Push/notification sinks
+`EventKind.TEST` alert through the webhook/MQTT/Web-Push/UnifiedPush/notification sinks
 only;
 never logged to the event store, never armed against the schedule, the ML
 gate, deterrence, or quiet hours — the test exists to prove the sinks fire,
 so it posts even inside a quiet window; MQTT publishes the event JSON
 without a binary-sensor pulse since the test has no entity), and
 `AuthWebHandler` (the config/session-management JSON), and
-`PushWebHandler` (the session-only `/api/push` trio — the VAPID public key,
-the endpoint list with `p256dh`/`auth` redacted, and subscribe/unsubscribe;
-deliberately absent from the token allow-list because a subscription is
-browser-session state, not an automation API). The
+`PushWebHandler` (the browser `/api/push` trio — the public VAPID key,
+the session-cookie-only endpoint list with `p256dh`/`auth` redacted, and
+subscribe/unsubscribe; deliberately absent from the token allow-list because
+a browser subscription is browser-session state, not an automation API), and
+`UnifiedPushWebHandler` (the receiver-facing `/api/push/unifiedpush` GET plus
+token-writable register and remove — the one push exception, because a
+headless receiver has no session cookie and the routes are kind-scoped to
+receiver rows). The
 `AuditLog` (a capped, atomically-persisted `filesDir/audit_log.json` ring)
 is written from exactly three places — the ApiRouter (every POST/PUT/DELETE it
 answers, dispatched or unknown-route, success or error, as `"$method $path"`),
@@ -572,7 +599,8 @@ snapshot honestly (no token fire-and-forget refresh inside the request).
 **`streaming/WebAuthGate.kt`** — the auth policy for the web client: session
 tokens, rate-limited PBKDF2 login (`login`), request authorization
 (`authenticate`), CSRF origin checks (`isCsrfSafe`), and the stateless
-API-token verdict (`authorizeApiToken` — GET/HEAD anywhere protected, POST
+API-token verdict (`authorizeApiToken` — GET/HEAD on protected routes except
+the auth routes and the browser push subscription list, POST
 only on the exact routes Token Write Policy allows, never an `/api/auth/`
 route; while the token setting is off the verdict fails closed and the
 headers are inert). Owned by the Streaming
@@ -606,18 +634,20 @@ has no viewer form.
 ### Token Write Policy
 **`streaming/web/TokenWritePolicy.kt`** — the exact POST routes a valid API
 token may write (stream/web/RTSP start and stop, `/api/capture`, recording
-start and stop, siren, torch, the detection-model download, and the
-detection-test alert — each a device action that changes no persisted
-setting, and the test additionally persists no event); every path
-outside the list stays read-only
-for tokens, and the list deliberately contains no `/api/auth/` route and no
-`/api/push/` route, so a bearer token never mints sessions, rotates
-credentials, logs out, or registers a browser push subscription (that is
-browser-session state, not an automation API). The
-Web Auth Gate's token verdict consults it for the method check, and the
-list is a deliberate subset of the ApiRouter's registered POST routes —
-every listed route is one the router registers, and a route the router does
-not register has no business being token-writable.
+start and stop, siren, torch, the model downloads, the detection-test alert,
+and the UnifiedPush receiver pairing routes). Every path outside the list
+stays read-only for tokens. The list deliberately contains no `/api/auth/`
+route; under `/api/push/` it contains only the two receiver-facing
+UnifiedPush routes, so a bearer token never mints sessions, rotates
+credentials, logs out, or registers a browser push subscription. The
+UnifiedPush routes are the one deliberate persisted-state exception: a token
+holder can enroll a receiver and therefore route future detection alerts to
+it, so treat the token as a push-enrollment credential; the browser
+subscription list is session-only (GET/HEAD included) and invisible to
+tokens. The Web Auth Gate's token verdict consults this list for the method
+check, and the list is a deliberate subset of the ApiRouter's registered POST
+routes — every listed route is one the router registers, and a route the
+router does not register has no business being token-writable.
 
 ### Frame Pipeline
 **`streaming/FramePipeline.kt`** — the web frame path: YUV in, overlaid JPEG
@@ -984,14 +1014,16 @@ not cross-module config — locked by test.
 
 ### Foreground Notifications
 **`core/ForegroundNotifications.kt`** — the one foreground-notification
-registry: named, distinct IDs (recording 1001, streaming 1002, update 1003,
-interval capture 1004 — the interval worker's old private 1002 collided with
-streaming's), the pure message builders (`streamingMessage`,
-`intervalCaptureMessage`), and both promotion variants — the Service
-`startForeground` path and the camera-typed WorkManager `ForegroundInfo`
-builder. StreamingService, RecordingService, IntervalCaptureWorker, and
-UpdateNotifier reference the registry; no private ID constant survives, so a
-new foreground owner cannot silently collide.
+registry: named, distinct IDs (recording 1001, runtime service 1002 for both
+server and streaming modes, update 1003, interval capture 1004 — the interval
+worker's old private 1002 collided with streaming's), the pure message builders
+(`streamingMessage`, `serverMessage`,
+`intervalCaptureMessage`), and the promotion variants — camera and
+connected-device `Service.startForeground` paths (microphone only when the
+permission is actually held) plus the camera-typed WorkManager
+`ForegroundInfo` builder. StreamingService, RecordingService,
+IntervalCaptureWorker, and UpdateNotifier reference the registry; no private
+ID constant survives, so a new foreground owner cannot silently collide.
 
 ### Interval Capture Policy
 **`capture/IntervalCapturePolicy.kt`** — the pure interval-capture policy:

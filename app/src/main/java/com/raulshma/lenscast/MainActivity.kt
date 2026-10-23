@@ -31,7 +31,12 @@ class MainActivity : ComponentActivity() {
 
         lifecycle.addObserver(LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> app.cameraService.onActivityResume()
+                Lifecycle.Event.ON_RESUME -> {
+                    app.cameraService.onActivityResume()
+                    // Retry a foreground promotion Android may have denied
+                    // while the app was backgrounded.
+                    app.ensureServerForeground()
+                }
                 Lifecycle.Event.ON_STOP -> app.cameraService.onActivityStop()
                 else -> {}
             }

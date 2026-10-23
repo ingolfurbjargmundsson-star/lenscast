@@ -47,6 +47,12 @@ user-configured**; LensCast never enables egress on its own:
   notification is end-to-end encrypted (RFC 8291) and published through
   the browser's push service (FCM/Mozilla autopush); the push service
   sees only ciphertext and routing metadata.
+- **UnifiedPush notifications** — sends the same end-to-end-encrypted
+  detection payload (RFC 8291/8292) to receiver endpoints that an Android
+  UnifiedPush app registered with the camera. Off by default and
+  independent from browser Web Push; the camera is the publisher only.
+  The distributor (ntfy, NextPush, …) sees the endpoint, ciphertext, and
+  routing metadata — never the alert text, snapshot, or private keys.
 
 ## Runtime downloads
 

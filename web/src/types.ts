@@ -259,6 +259,12 @@ export interface StreamingSettings {
    * through the /api/push routes, never part of this settings document.
    */
   pushEnabled: boolean
+  /**
+   * UnifiedPush alerts to paired receiver endpoints: an independent master
+   * gate. Targets are managed through the /api/push/unifiedpush routes,
+   * never part of this settings document.
+   */
+  unifiedPushEnabled: boolean
   /** Capture retention window in days; 0 keeps captures forever. */
   captureRetentionDays: number
   /** Detection-event retention window in days; 0 keeps events forever. */

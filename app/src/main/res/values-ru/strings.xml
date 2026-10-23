@@ -485,8 +485,10 @@
     <string name="detection_quiet_from">Тишина с (минута дня)</string>
     <string name="detection_quiet_until">Тишина до (минута дня)</string>
     <string name="detection_tamper">Детекция саботажа (отключение питания)</string>
-    <string name="detection_push">Web Push-уведомления</string>
+    <string name="detection_push">Web Push-уведомления (браузерные дашборды)</string>
     <string name="detection_push_description">Отправляет зашифрованные push-уведомления на дашборды, подписанные из карточки Web Push веб-интерфейса — браузер показывает их даже с закрытой вкладкой (режим дашборда по HTTPS)</string>
+    <string name="detection_unifiedpush">Уведомления UnifiedPush</string>
+    <string name="detection_unifiedpush_description">Отправляет зашифрованные оповещения об обнаружении сопряжённым получателям UnifiedPush (например, приложению-дистрибьютору Android). Получатели сопрягаются с VAPID-ключом камеры; управление ими — в карточке UnifiedPush веб-дашборда. Камера только публикует.</string>
     <string name="detection_push_vapid_subject">VAPID-контакт (mailto: или https:)</string>
     <string name="detection_push_vapid_subject_invalid">Сервисы push отклоняют контакт, который не является URI mailto: или https:</string>
     <string name="detection_ml">Детекция объектов (ML)</string>

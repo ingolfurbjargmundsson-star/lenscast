@@ -18,8 +18,9 @@ import java.security.spec.X509EncodedKeySpec
  * Owns the VAPID identity for Web Push (RFC 8292): one persistent P-256 key
  * pair, generated once and reused for the installation's lifetime. The same
  * private key signs every RFC 8292 JWT (ES256) and its public key is the
- * `applicationServerKey` every browser subscription binds to — a rotated key
- * would silently orphan existing subscriptions (push services reject payloads
+ * `applicationServerKey` every browser subscription binds to — and the
+ * `vapid` value every UnifiedPush registration binds to. A rotated key would
+ * silently orphan existing subscriptions (push services reject payloads
  * signed under an unregistered key), so the pair is load-once, like the TLS
  * identity in [com.raulshma.lenscast.core.TlsCertManager].
  *

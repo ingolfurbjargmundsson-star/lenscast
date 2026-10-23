@@ -9,6 +9,7 @@ import {
   revokeAuthSession,
   saveStreamingPatch,
   updateAuthConfig,
+  getVapidPublicKey,
 } from '../api/client'
 import type { AuthSessionInfo } from '../api/client'
 import { formatTime, t } from '../lib/i18n'
@@ -49,6 +50,7 @@ export default function AuthCard() {
   const [tokenEnabled, setTokenEnabled] = createSignal(false)
   const [tokenConfigured, setTokenConfigured] = createSignal(false)
   const [generatedToken, setGeneratedToken] = createSignal('')
+  const [pairingJson, setPairingJson] = createSignal('')
   const [tokenBusy, setTokenBusy] = createSignal(false)
   const [tokenMsg, setTokenMsg] = createSignal('')
 
@@ -85,6 +87,7 @@ export default function AuthCard() {
     setTokenBusy(true)
     setTokenMsg('')
     setGeneratedToken('')
+    setPairingJson('')
     try {
       const token = generateApiToken()
       await saveStreamingPatch({ apiToken: token, apiTokenEnabled: true })
@@ -92,6 +95,33 @@ export default function AuthCard() {
       setGeneratedToken(token)
       setTokenEnabled(true)
       setTokenConfigured(true)
+      // The pairing bridge: a UnifiedPush receiver needs the camera base URL,
+      // the token, and the VAPID key, and this is the only moment the
+      // plaintext token exists client-side. A failed VAPID read must not cost
+      // the token, so the JSON is best-effort. A plain-HTTP dashboard omits it
+      // entirely: the pairing document is a credential bundle, and the docs
+      // require the HTTPS dashboard mode before it leaves the browser.
+      if (!window.isSecureContext) return
+      try {
+        const { publicKey } = await getVapidPublicKey()
+        setPairingJson(
+          JSON.stringify(
+            {
+              type: 'lenscast-pairing',
+              version: 1,
+              camera: location.host,
+              baseUrl: location.origin,
+              apiToken: token,
+              vapidPublicKey: publicKey,
+            },
+            null,
+            2,
+          ),
+        )
+      } catch {
+        // The token is still valid; the receiver can read the key from
+        // GET /api/push/unifiedpush instead.
+      }
     } catch (e: any) {
       setTokenMsg(e?.message || t('auth.tokenFailed'))
     } finally {
@@ -120,6 +150,15 @@ export default function AuthCard() {
       setTokenMsg(t('auth.copied'))
     } catch {
       setTokenMsg(t('auth.copyFailed'))
+    }
+  }
+
+  async function copyPairing() {
+    try {
+      await navigator.clipboard.writeText(pairingJson())
+      setTokenMsg(t('auth.pairingCopied'))
+    } catch {
+      setTokenMsg(t('auth.pairingCopyFailed'))
     }
   }
 
@@ -323,6 +362,33 @@ export default function AuthCard() {
             <span class="status-banner-dot" aria-hidden="true" />
             <span>{t('auth.tokenWarning')}</span>
           </div>
+          <Show when={!window.isSecureContext}>
+            <div class="status-banner status-banner-warning" role="alert">
+              <span class="status-banner-dot" aria-hidden="true" />
+              <span>{t('auth.pairingInsecure')}</span>
+            </div>
+          </Show>
+          <Show when={pairingJson()}>
+            <div class="field-row">
+              <span class="field-label">{t('auth.pairing')}</span>
+            </div>
+            <textarea
+              class="field-input field-input-full"
+              readonly
+              rows={8}
+              value={pairingJson()}
+              onClick={(e) => e.currentTarget.select()}
+            />
+            <div class="deterrence-row">
+              <button type="button" class="action-btn action-btn-ghost" onClick={() => void copyPairing()}>
+                <span>{t('auth.copyPairing')}</span>
+              </button>
+            </div>
+            <div class="status-banner status-banner-info stream-mode-hint" role="note">
+              <span class="status-banner-dot" aria-hidden="true" />
+              <span>{t('auth.pairingHint')}</span>
+            </div>
+          </Show>
         </Show>
         <Show when={tokenMsg()}>
           <span class="clients-cap-row">{tokenMsg()}</span>

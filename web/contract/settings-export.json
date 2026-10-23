@@ -122,6 +122,7 @@
       "mqttDiscoveryPrefix": "homeassistant",
       "mqttTelemetryEnabled": false,
       "pushEnabled": false,
+      "unifiedPushEnabled": false,
       "captureRetentionDays": 0,
       "eventRetentionDays": 0,
       "storageQuotaMb": 2048,

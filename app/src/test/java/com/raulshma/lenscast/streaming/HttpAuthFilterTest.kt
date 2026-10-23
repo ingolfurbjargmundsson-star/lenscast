@@ -302,6 +302,7 @@ class HttpAuthFilterTest {
         val filter = HttpAuthFilter(tokenGate(), port = 8080)
         assertNull(filter.authorize("POST", "/api/recording/start", mapOf("authorization" to "Bearer $apiToken")))
         assertNull(filter.authorize("POST", "/api/capture", mapOf("x-api-token" to apiToken)))
+        assertNull(filter.authorize("POST", "/api/push/unifiedpush", mapOf("authorization" to "Bearer $apiToken")))
     }
 
     @Test
@@ -309,6 +310,24 @@ class HttpAuthFilterTest {
         val filter = HttpAuthFilter(tokenGate(), port = 8080)
         val result = filter.authorize("GET", "/api/auth/config", mapOf("authorization" to "Bearer $apiToken"))!!
         assertEquals(401, result.statusCode)
+    }
+
+    @Test
+    fun `a token cannot list browser push subscriptions but a session can`() {
+        val gate = WebAuthGate().apply {
+            setCredentials("admin", com.raulshma.lenscast.core.StreamAuthCrypto.hashPassword("s3cret"))
+            setApiTokenProvider {
+                WebAuthGate.ApiTokenConfig(
+                    enabled = true,
+                    hash = com.raulshma.lenscast.core.StreamAuthCrypto.sha256Hex(apiToken),
+                )
+            }
+        }
+        val filter = HttpAuthFilter(gate, port = 8080)
+        val tokenHeaders = mapOf("authorization" to "Bearer $apiToken")
+        assertEquals(401, filter.authorize("GET", "/api/push/subscriptions", tokenHeaders)!!.statusCode)
+        // The same route remains reachable with the browser session cookie.
+        assertNull(filter.authorize("GET", "/api/push/subscriptions", mapOf(cookieFor(loginCookie(gate)))))
     }
 
     @Test

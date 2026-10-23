@@ -534,20 +534,43 @@ object OpenApiSpec {
             "/api/push/subscriptions",
             "get" to operation(
                 listOf("push"),
-                "The stored browser subscriptions (key material redacted)",
+                "The stored browser subscriptions (session-cookie-only; key material redacted)",
                 mapOf("200" to ok("PushSubscriptionsResponseDto")),
             ),
             "post" to operation(
                 listOf("push"),
-                "Subscribe this browser's push endpoint (session-only; never token-writable)",
+                "Subscribe this browser's push endpoint (session-cookie-only; never token-writable)",
                 mapOf("200" to ok("SuccessResponse")),
                 requestBody = jsonBody("PushSubscribeRequest"),
             ),
             "delete" to operation(
                 listOf("push"),
-                "Unsubscribe an endpoint",
+                "Unsubscribe an endpoint (session-cookie-only)",
                 mapOf("200" to ok("SuccessResponse")),
                 parameters = listOf(queryParam("endpoint", "The endpoint URL to remove", mapOf("type" to "string"))),
+            ),
+        )
+        path(
+            "/api/push/unifiedpush",
+            "get" to operation(
+                listOf("push"),
+                "Registered UnifiedPush targets plus the VAPID key for `UnifiedPush.register(vapid=…)`",
+                mapOf("200" to ok("UnifiedPushTargetsResponseDto")),
+            ),
+            "post" to operation(
+                listOf("push"),
+                "Register or rotate a UnifiedPush receiver endpoint (token-writable; endpoint is the key)",
+                mapOf("200" to ok("UnifiedPushRegisterResponseDto")),
+                requestBody = jsonBody("UnifiedPushRegisterRequest"),
+            ),
+        )
+        path(
+            "/api/push/unifiedpush/remove",
+            "post" to operation(
+                listOf("push"),
+                "Remove one UnifiedPush endpoint (token-writable and idempotent)",
+                mapOf("200" to ok("UnifiedPushRemoveResponseDto")),
+                requestBody = jsonBody("UnifiedPushRemoveRequest"),
             ),
         )
 
@@ -595,9 +618,11 @@ object OpenApiSpec {
                     "bearerToken" to mapOf(
                         "type" to "http",
                         "scheme" to "bearer",
-                        "description" to "The read-mostly API token (when armed in settings): GET/HEAD everywhere " +
-                            "protected, POST only on the fixed token write allow-list (stream/recording lifecycle, " +
-                            "capture, siren/torch, model downloads, detection test), never /api/auth/* or /api/push/*.",
+                        "description" to "The read-mostly API token (when armed in settings): GET/HEAD on protected " +
+                            "routes except /api/auth/* and the browser /api/push/subscriptions list, POST only on " +
+                            "the fixed token write allow-list (stream/recording lifecycle, capture, siren/torch, " +
+                            "model downloads, detection test, UnifiedPush receiver pairing). The browser " +
+                            "/api/push/subscriptions routes stay session-cookie-only.",
                     ),
                 ),
                 "schemas" to schemasBlock(),
@@ -710,6 +735,7 @@ object OpenApiSpec {
             "mqttDiscoveryPrefix" to stringSchema(),
             "mqttTelemetryEnabled" to boolSchema(),
             "pushEnabled" to boolSchema(),
+            "unifiedPushEnabled" to boolSchema(),
             "motionDetectionEnabled" to boolSchema(),
             "motionRecordingEnabled" to boolSchema(),
             "soundDetectionEnabled" to boolSchema(),
@@ -720,7 +746,15 @@ object OpenApiSpec {
             "onvifEnabled" to boolSchema(),
             "httpsEnabled" to boolSchema(),
             "hlsDvrSegments" to intSchema(),
-            required = listOf("port", "webStreamingEnabled", "rtspEnabled", "rtspPort", "mqttEnabled", "pushEnabled"),
+            required = listOf(
+                "port",
+                "webStreamingEnabled",
+                "rtspEnabled",
+                "rtspPort",
+                "mqttEnabled",
+                "pushEnabled",
+                "unifiedPushEnabled",
+            ),
             description = "The settings document's streaming half; the full field set is pinned by the contract fixture.",
         ),
         "StatusResponseDto" to schema(
@@ -1015,6 +1049,46 @@ object OpenApiSpec {
                 "additionalProperties" to stringSchema(),
             ),
             required = listOf("endpoint"),
+        ),
+        "UnifiedPushTargetsResponseDto" to schema(
+            "targets" to arrayOf(ref("UnifiedPushTargetDto")),
+            "count" to intSchema(),
+            "maxTargets" to intSchema("The receiver population cap"),
+            "vapidPublicKey" to stringSchema("base64url, 65-byte uncompressed P-256 point"),
+            required = listOf("targets", "count", "maxTargets", "vapidPublicKey"),
+        ),
+        "UnifiedPushTargetDto" to schema(
+            "endpoint" to stringSchema("The distributor capability URL (sensitive)"),
+            "instance" to stringSchema("The distributor instance the receiver registered on"),
+            "label" to stringSchema("A human-readable target name"),
+            "distributor" to stringSchema("The distributor package, informational"),
+            "createdAtMs" to intSchema(),
+            required = listOf("endpoint", "instance", "createdAtMs"),
+        ),
+        "UnifiedPushRegisterRequest" to schema(
+            "endpoint" to stringSchema("The RFC 8030 endpoint from the distributor"),
+            "p256dh" to stringSchema("base64url, 65-byte uncompressed P-256 point"),
+            "auth" to stringSchema("base64url, 16-byte auth secret"),
+            "instance" to stringSchema("Distributor instance; blank folds to `default`"),
+            "label" to stringSchema("Optional human-readable target name"),
+            "distributor" to stringSchema("Optional distributor package name"),
+            "replacedEndpoint" to stringSchema("The rotated-away endpoint to retire atomically"),
+            required = listOf("endpoint", "p256dh", "auth"),
+        ),
+        "UnifiedPushRegisterResponseDto" to schema(
+            "success" to boolSchema(),
+            "count" to intSchema("The receiver count after the attempt"),
+            "error" to stringSchema("The readable rejection reason when success is false"),
+            required = listOf("success"),
+        ),
+        "UnifiedPushRemoveRequest" to schema(
+            "endpoint" to stringSchema("The target endpoint to remove"),
+            required = listOf("endpoint"),
+        ),
+        "UnifiedPushRemoveResponseDto" to schema(
+            "success" to boolSchema("The request was well-formed; removal is idempotent"),
+            "removed" to boolSchema("A target was actually present"),
+            required = listOf("success", "removed"),
         ),
     )
 }

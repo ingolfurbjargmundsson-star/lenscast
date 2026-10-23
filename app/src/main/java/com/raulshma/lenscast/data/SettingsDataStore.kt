@@ -225,6 +225,7 @@ private object Keys {
     val MQTT_DISCOVERY_PREFIX = stringPreferencesKey("mqtt_discovery_prefix")
     val MQTT_TELEMETRY_ENABLED = stringPreferencesKey("mqtt_telemetry_enabled")
     val PUSH_ENABLED = stringPreferencesKey("push_enabled")
+    val UNIFIED_PUSH_ENABLED = stringPreferencesKey("unified_push_enabled")
     val PUSH_VAPID_SUBJECT = stringPreferencesKey("push_vapid_subject")
     val CAPTURE_RETENTION_DAYS = intPreferencesKey("capture_retention_days")
     val EVENT_RETENTION_DAYS = intPreferencesKey("event_retention_days")
@@ -775,6 +776,13 @@ internal val mqttTelemetryEnabledPref = boolPref(Keys.MQTT_TELEMETRY_ENABLED, de
 
 /** Web Push alerts to subscribed browsers: the phone-side master gate, off by default. */
 internal val pushEnabledPref = boolPref(Keys.PUSH_ENABLED, defaultTrue = false)
+
+/**
+ * UnifiedPush alerts to registered receiver endpoints: an independent gate,
+ * off by default. A paired Android receiver (or any UnifiedPush app) can be
+ * armed without also arming browser dashboards.
+ */
+internal val unifiedPushEnabledPref = boolPref(Keys.UNIFIED_PUSH_ENABLED, defaultTrue = false)
 
 /**
  * The RFC 8292 `sub` contact — a mailto: URI carried in every VAPID JWT. A
@@ -1364,6 +1372,8 @@ class SettingsDataStore(
 
     val pushEnabled: StateFlow<Boolean> = pushEnabledPref.shared()
 
+    val unifiedPushEnabled: StateFlow<Boolean> = unifiedPushEnabledPref.shared()
+
     val pushVapidSubject: StateFlow<String> = pushVapidSubjectPref.shared()
 
     val captureRetentionDays: StateFlow<Int> = captureRetentionDaysPref.shared()
@@ -1612,6 +1622,8 @@ class SettingsDataStore(
     suspend fun saveMqttTelemetryEnabled(enabled: Boolean) = mqttTelemetryEnabledPref.save(enabled)
 
     suspend fun savePushEnabled(enabled: Boolean) = pushEnabledPref.save(enabled)
+
+    suspend fun saveUnifiedPushEnabled(enabled: Boolean) = unifiedPushEnabledPref.save(enabled)
 
     suspend fun savePushVapidSubject(subject: String) = pushVapidSubjectPref.save(subject)
 

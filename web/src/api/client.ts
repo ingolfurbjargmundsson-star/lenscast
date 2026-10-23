@@ -451,3 +451,37 @@ export async function deletePushSubscription(endpoint: string): Promise<{ succes
   const params = new URLSearchParams({ endpoint })
   return requestJson(`/api/push/subscriptions?${params.toString()}`, { method: 'DELETE' })
 }
+
+// ── UnifiedPush (receiver endpoints; the phone publishes to them) ──
+
+export interface UnifiedPushTargetInfo {
+  endpoint: string
+  instance: string
+  label?: string
+  distributor?: string
+  createdAtMs: number
+}
+
+export interface UnifiedPushTargetsResponse {
+  targets: UnifiedPushTargetInfo[]
+  count: number
+  maxTargets: number
+  vapidPublicKey: string
+}
+
+/** GET /api/push/unifiedpush — registered receiver targets plus the camera's VAPID key. */
+export async function listUnifiedPushTargets(): Promise<UnifiedPushTargetsResponse> {
+  return requestJson('/api/push/unifiedpush')
+}
+
+/**
+ * POST /api/push/unifiedpush/remove — remove one receiver endpoint.
+ * Idempotent: `removed` reports whether it was present.
+ */
+export async function removeUnifiedPushTarget(endpoint: string): Promise<{ success: boolean; removed: boolean }> {
+  return requestJson('/api/push/unifiedpush/remove', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint }),
+  })
+}

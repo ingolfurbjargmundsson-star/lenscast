@@ -14,6 +14,7 @@ import SystemPanel from './SystemPanel'
 import BackupCard from './BackupCard'
 import MqttCard from './MqttCard'
 import PushCard from './PushCard'
+import UnifiedPushCard from './UnifiedPushCard'
 import WhipCard from './WhipCard'
 import RtmpCard from './RtmpCard'
 import AuthCard from './AuthCard'
@@ -464,6 +465,8 @@ export default function AppSettingsPanel(props: Props) {
       />
 
       <PushCard settings={props.settings} updateStreamingAndSave={props.updateStreamingAndSave} />
+
+      <UnifiedPushCard settings={props.settings} updateStreamingAndSave={props.updateStreamingAndSave} />
 
       <Show when={isAdmin()}>
         <AuthCard />

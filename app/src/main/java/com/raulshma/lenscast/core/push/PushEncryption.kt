@@ -66,9 +66,10 @@ object PushEncryption {
     private const val INFO_NONCE = "Content-Encoding: nonce"
 
     /**
-     * The receiver-side key material of one browser subscription, decoded from
+     * The receiver-side key material of one push subscription, decoded from
      * its base64url wire form: the client's P-256 public point (65 bytes,
-     * 0x04-prefixed) and the 16-byte auth secret.
+     * 0x04-prefixed) and the 16-byte auth secret. Browser subscriptions and
+     * UnifiedPush Web Push endpoints use the same shape.
      */
     data class ReceiverKey(val publicKey: ByteArray, val authSecret: ByteArray)
 

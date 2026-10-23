@@ -12,8 +12,9 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Owns the web-client auth policy: session tokens, login rate limiting, and
  * CSRF origin checks — plus the API-token verdict for programmatic clients
- * (GET/HEAD anywhere protected, POST only on [TokenWritePolicy]'s exact
- * allow-list). The transport ([StreamingServer]) translates requests
+ * (GET/HEAD anywhere protected except the credential and browser-subscription
+ * routes, POST only on [TokenWritePolicy]'s exact allow-list). The transport
+ * ([StreamingServer]) translates requests
  * to this small interface; the policy itself is reachable — and testable —
  * without a live socket.
  *
@@ -121,17 +122,20 @@ class WebAuthGate(
      * The API-token verdict, checked before the login/session path. True only
      * when: the token is enabled, a hash is configured, [token] matches it
      * (constant-time over the SHA-256 hex), the method is GET/HEAD — or POST
-     * on exactly the routes [TokenWritePolicy] allows — and [path] is outside
-     * `/api/auth/`. A bearer token never mints sessions, rotates credentials,
-     * or logs out, and stays read-only everywhere the write policy does not
+     * on exactly the routes [TokenWritePolicy] allows — and [path] (with any
+     * query string ignored) is outside `/api/auth/` and the browser push
+     * subscription list. A bearer token never mints sessions, rotates
+     * credentials, logs out, or enumerates the session-managed browser
+     * subscriptions; it stays read-only everywhere the write policy does not
      * name. Stateless: no session map entry, no rate-limit budget of its own
      * beyond the comparison itself.
      */
     fun authorizeApiToken(token: String?, method: String, path: String): Boolean {
+        val pathOnly = path.substringBefore('?')
         val methodAllowed = method == "GET" || method == "HEAD" ||
-            (method == "POST" && TokenWritePolicy.allowsPost(path))
+            (method == "POST" && TokenWritePolicy.allowsPost(pathOnly))
         if (!methodAllowed) return false
-        if (path.startsWith(API_TOKEN_DENIED_PATH_PREFIX)) return false
+        if (API_TOKEN_DENIED_PATH_PREFIXES.any { pathOnly.startsWith(it) }) return false
         val config = tokenProvider()
         if (!config.enabled) return false
         if (config.hash.isBlank()) return false
@@ -425,7 +429,15 @@ class WebAuthGate(
         private const val AUTH_LOCKOUT_MS = 60 * 1000L
         private const val MAX_AUTH_ATTEMPTS_TRACKED = 500
 
-        /** Paths the API token can never touch — credentials and session control. */
-        private const val API_TOKEN_DENIED_PATH_PREFIX = "/api/auth/"
+        /**
+         * Paths the API token can never touch: credential/session control, and
+         * the browser push subscription list — session-cookie state that
+         * enumerates deliver-to endpoints. UnifiedPush receivers use the
+         * token-writable `/api/push/unifiedpush` routes instead.
+         */
+        private val API_TOKEN_DENIED_PATH_PREFIXES = listOf(
+            "/api/auth/",
+            "/api/push/subscriptions",
+        )
     }
 }

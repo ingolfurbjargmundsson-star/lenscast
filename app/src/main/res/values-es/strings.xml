@@ -467,8 +467,10 @@
     <string name="detection_quiet_from">Silencio desde (minuto del día)</string>
     <string name="detection_quiet_until">Silencio hasta (minuto del día)</string>
     <string name="detection_tamper">Detección de sabotaje (corte de energía)</string>
-    <string name="detection_push">Alertas Web Push</string>
+    <string name="detection_push">Alertas Web Push (paneles del navegador)</string>
     <string name="detection_push_description">Envía notificaciones push cifradas a los paneles suscritos desde la tarjeta Web Push de la interfaz web — el navegador las muestra incluso con la pestaña cerrada (modo de panel HTTPS)</string>
+    <string name="detection_unifiedpush">Alertas UnifiedPush</string>
+    <string name="detection_unifiedpush_description">Envía alertas de detección cifradas a receptores UnifiedPush emparejados (por ejemplo, una app distribuidora de Android). Los receptores se emparejan con la clave VAPID de la cámara; gestiónalos desde la tarjeta UnifiedPush del panel web. La cámara solo publica.</string>
     <string name="detection_push_vapid_subject">Contacto VAPID (mailto: o https:)</string>
     <string name="detection_push_vapid_subject_invalid">Los servicios push rechazan un contacto que no es un URI mailto: o https:</string>
     <string name="detection_ml">Detección de objetos (ML)</string>

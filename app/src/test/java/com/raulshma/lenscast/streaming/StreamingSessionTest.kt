@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -57,6 +58,7 @@ class StreamingSessionTest {
     private val streamUrl = MutableStateFlow("http://0.0.0.0:8080")
     private val isAudioStreaming = MutableStateFlow(false)
     private val isRtspRunning = MutableStateFlow(false)
+    private val isServerRunning = MutableStateFlow(true)
 
     private val cameraService: CameraService = mockk(relaxed = true)
     private val streamingManager: StreamingManager = mockk(relaxed = true)
@@ -81,6 +83,8 @@ class StreamingSessionTest {
         every { streamingManager.streamUrl } returns streamUrl
         every { streamingManager.isAudioStreaming } returns isAudioStreaming
         every { streamingManager.isRtspRunning } returns isRtspRunning
+        every { streamingManager.isServerRunning } returns isServerRunning
+        every { streamingManager.isSharedMicCapturing() } returns false
         every { streamingManager.isLiveStreaming() } returns false
         every { streamingManager.isWebStreamActive() } returns false
         every { streamingManager.isRtspAudioActive() } returns false
@@ -128,6 +132,13 @@ class StreamingSessionTest {
 
     private fun startedServiceIntents(): List<Intent> =
         shadowOf(appContext).allStartedServices
+
+    /** Robolectric keeps the stop queue across tests; drain it before asserting. */
+    private fun drainStoppedServices() {
+        while (shadowOf(appContext).nextStoppedService != null) {
+            // drain
+        }
+    }
 
     // ── begin ──
 
@@ -184,8 +195,10 @@ class StreamingSessionTest {
         verify(exactly = 1) { thermalMonitor.stopMonitoring() }
         verify(exactly = 1) { streamWatchdog.stopMonitoring() }
         verify(exactly = 1) { cameraService.releaseKeepAlive() }
+        // The server is still up, so the failed stream falls back to server
+        // mode instead of dropping the process to background network.
         val last = startedServiceIntents().last()
-        assertEquals(StreamingService.ACTION_PAUSE, last.action)
+        assertEquals(StreamingService.ACTION_SERVER, last.action)
     }
 
     // ── end ──
@@ -209,12 +222,27 @@ class StreamingSessionTest {
         verify(exactly = 1) { thermalMonitor.stopMonitoring() }
         verify(exactly = 1) { streamWatchdog.stopMonitoring() }
         verify(exactly = 1) { cameraService.releaseKeepAlive() }
-        assertEquals(StreamingService.ACTION_PAUSE, startedServiceIntents().last().action)
+        // The server outlives the stream: hand the one foreground slot back
+        // to server mode instead of pausing it.
+        assertEquals(StreamingService.ACTION_SERVER, startedServiceIntents().last().action)
 
-        // A second end with no active session is a no-op.
+        // A second end with no active session is a no-op while the server
+        // still runs.
         runWithMainPumped { session.end() }
         verify(exactly = 1) { powerManager.releaseWakeLock() }
-        assertEquals(StreamingService.ACTION_PAUSE, startedServiceIntents().last().action)
+        assertEquals(StreamingService.ACTION_SERVER, startedServiceIntents().last().action)
+    }
+
+    @Test
+    fun `end stops the runtime foreground service when the server is already down`() {
+        isServerRunning.value = false
+        runWithMainPumped { session.begin() }
+        drainStoppedServices()
+
+        runWithMainPumped { session.end() }
+
+        val stopped = shadowOf(appContext).nextStoppedService
+        assertEquals(StreamingService::class.java.name, stopped?.component?.className)
     }
 
     // ── recover tiers ──
@@ -343,13 +371,66 @@ class StreamingSessionTest {
     }
 
     @Test
-    fun `foreground pause carries no audio claim`() {
+    fun `foreground server handoff carries no audio claim`() {
         runWithMainPumped { session.begin() }
         every { streamingManager.isLiveStreaming() } returns false
         runWithMainPumped { session.end() }
 
-        val pause = startedServiceIntents().last()
-        assertEquals(StreamingService.ACTION_PAUSE, pause.action)
-        assertFalse(pause.hasExtra(StreamingService.EXTRA_AUDIO_ACTIVE))
+        val handoff = startedServiceIntents().last()
+        assertEquals(StreamingService.ACTION_SERVER, handoff.action)
+        assertFalse(handoff.hasExtra(StreamingService.EXTRA_AUDIO_ACTIVE))
+    }
+
+    // �� server-only mode ��
+
+    @Test
+    fun `server foreground starts without a stream session and carries the url`() {
+        session.ensureServerForeground()
+
+        val intent = startedServiceIntents().last()
+        assertEquals(StreamingService.ACTION_SERVER, intent.action)
+        assertEquals("http://0.0.0.0:8080", intent.getStringExtra(StreamingService.EXTRA_URL))
+        assertFalse(intent.hasExtra(StreamingService.EXTRA_AUDIO_ACTIVE))
+    }
+
+    @Test
+    fun `server foreground is a no-op while a stream session is active`() {
+        runWithMainPumped { session.begin() }
+        val before = startedServiceIntents().size
+
+        session.ensureServerForeground()
+
+        assertEquals(before, startedServiceIntents().size)
+    }
+
+    @Test
+    fun `server foreground carries the headless sound-detection mic verdict`() {
+        every { streamingManager.isSharedMicCapturing() } returns true
+
+        session.ensureServerForeground()
+
+        val intent = startedServiceIntents().last()
+        assertEquals(StreamingService.ACTION_SERVER, intent.action)
+        assertTrue(intent.getBooleanExtra(StreamingService.EXTRA_AUDIO_ACTIVE, false))
+    }
+
+    @Test
+    fun `server foreground stops when the server stops with no stream`() {
+        drainStoppedServices()
+
+        session.stopServerForegroundIfIdle()
+
+        val stopped = shadowOf(appContext).nextStoppedService
+        assertEquals(StreamingService::class.java.name, stopped?.component?.className)
+    }
+
+    @Test
+    fun `server foreground is not stopped by an idle server transition while a stream is active`() {
+        runWithMainPumped { session.begin() }
+        drainStoppedServices()
+
+        session.stopServerForegroundIfIdle()
+
+        assertNull(shadowOf(appContext).nextStoppedService)
     }
 }

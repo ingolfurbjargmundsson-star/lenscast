@@ -2,6 +2,7 @@ package com.raulshma.lenscast.streaming.web
 
 import com.raulshma.lenscast.core.AppJson
 import com.raulshma.lenscast.core.push.PushSubscriptionStore
+import com.raulshma.lenscast.core.push.PushTargetKind
 import com.raulshma.lenscast.core.push.StoredPushSubscription
 import com.raulshma.lenscast.core.push.VapidKeys
 import com.raulshma.lenscast.streaming.model.PushSubscriptionDto
@@ -23,12 +24,22 @@ import com.squareup.moshi.JsonClass
  *   PushSubscription JSON flattened to `endpoint` + `p256dh` + `auth`.
  * - `DELETE /api/push/subscriptions?endpoint=…` → unsubscribe.
  *
- * Auth contract: these routes are session-only by design and deliberately
- * absent from [TokenWritePolicy]'s token allow-list — a subscription is
- * browser-session state (it arrives from the very browser whose service
- * worker must show the notification), not an automation API. The key
- * material is validated at admission ([com.raulshma.lenscast.core.push.PushSubscriptionStore.add]
- * rejects wrong shapes), so the store only ever holds usable receivers.
+ * Auth contract: these routes are session-cookie-only by design and
+ * deliberately absent from [TokenWritePolicy]'s token allow-list — a
+ * subscription is browser-session state (it arrives from the very browser
+ * whose service worker must show the notification), not an automation API.
+ * The Web Auth Gate additionally denies token GET/HEAD on the list route, so
+ * a bearer token can neither enumerate nor delete browser subscriptions. The
+ * key material is validated at admission
+ * ([com.raulshma.lenscast.core.push.PushSubscriptionStore.add] rejects wrong
+ * shapes), so the store only ever holds usable receivers.
+ *
+ * Kind conflicts: an endpoint belongs to exactly one transport. A browser
+ * subscribe attempt against an endpoint already registered by a UnifiedPush
+ * receiver is rejected, but this legacy route keeps its boolean
+ * `{"success":false}` response. The typed
+ * [com.raulshma.lenscast.core.push.PushAddStatus.CONFLICT] is exposed by the
+ * UnifiedPush API (`/api/push/unifiedpush`), the automation-facing route.
  */
 class PushWebHandler(
     private val subscriptions: PushSubscriptionStore,
@@ -47,11 +58,13 @@ class PushWebHandler(
         VapidPublicKeyDto(publicKey = vapidKeys.publicKeyBase64Url()),
     )
 
-    /** GET /api/push/subscriptions — endpoints and timestamps only, keys redacted. */
+    /** GET /api/push/subscriptions — browser endpoints and timestamps only, keys redacted. */
     fun list(): String = listAdapter.toJson(
         PushSubscriptionsResponseDto(
-            subscriptions = subscriptions.all().map { it.redacted() },
-            count = subscriptions.count(),
+            subscriptions = subscriptions.all()
+                .filter { it.targetKind == PushTargetKind.BROWSER }
+                .map { it.redacted() },
+            count = subscriptions.count(PushTargetKind.BROWSER),
         ),
     )
     /** POST /api/push/subscriptions — the subscribing browser's own key material. */
@@ -68,9 +81,11 @@ class PushWebHandler(
         return successAdapter.toJson(SuccessResponse(success = added))
     }
 
-    /** DELETE /api/push/subscriptions?endpoint=… */
+    /** DELETE /api/push/subscriptions?endpoint=… — browser rows only. */
     fun unsubscribe(endpoint: String?): String {
-        val removed = endpoint?.let { subscriptions.remove(it) } == true
+        val removed = endpoint?.let {
+            subscriptions.remove(it, PushTargetKind.BROWSER)
+        } == true
         return successAdapter.toJson(SuccessResponse(success = removed))
     }
 

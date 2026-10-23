@@ -466,8 +466,10 @@
     <string name="detection_quiet_from">Ruhe ab (Minute des Tages)</string>
     <string name="detection_quiet_until">Ruhe bis (Minute des Tages)</string>
     <string name="detection_tamper">Manipulationserkennung (Stromausfall)</string>
-    <string name="detection_push">Web-Push-Benachrichtigungen</string>
+    <string name="detection_push">Web-Push-Benachrichtigungen (Browser-Dashboards)</string>
     <string name="detection_push_description">Sendet verschlüsselte Push-Benachrichtigungen an Dashboards, die über die Web-Push-Karte der Web-Oberfläche abonniert wurden — der Browser zeigt sie auch bei geschlossenem Tab an (HTTPS-Dashboard-Modus)</string>
+    <string name="detection_unifiedpush">UnifiedPush-Benachrichtigungen</string>
+    <string name="detection_unifiedpush_description">Sendet verschlüsselte Erkennungsalarme an gekoppelte UnifiedPush-Empfänger (z. B. eine Android-Distributor-App). Empfänger werden über den VAPID-Schlüssel der Kamera gekoppelt; verwaltet werden sie über die UnifiedPush-Karte im Web-Dashboard. Die Kamera ist nur der Publisher.</string>
     <string name="detection_push_vapid_subject">VAPID-Kontakt (mailto: oder https:)</string>
     <string name="detection_push_vapid_subject_invalid">Push-Dienste verwerfen einen Kontakt, der keine mailto:- oder https:-URI ist</string>
     <string name="detection_ml">Objekterkennung (ML)</string>

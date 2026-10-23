@@ -36,6 +36,7 @@ import com.raulshma.lenscast.data.CaptureHistoryStore
 import com.raulshma.lenscast.data.SettingsDataStore
 import com.raulshma.lenscast.core.NetworkUtils
 import com.raulshma.lenscast.settings.SettingsApplier
+import com.raulshma.lenscast.streaming.ServerForegroundController
 import com.raulshma.lenscast.streaming.StreamStateJournal
 import com.raulshma.lenscast.streaming.StreamStateJournalWriter
 import com.raulshma.lenscast.streaming.StreamWidgetProvider
@@ -117,6 +118,13 @@ class MainApplication : Application(), SingletonImageLoader.Factory {
         StreamingSession(
             this, cameraService, { streamingManager }, powerManager, thermalMonitor,
         ) { streamWatchdog }
+    }
+    // Server state -> runtime service server mode. The session still owns the
+    // FGS intents; this is the app-lifetime bridge that keeps the server-only
+    // mode in sync with every server start/stop path (launch, port/TLS
+    // restart, StreamToggle.stopServer, watchdog recovery).
+    val serverForegroundController: ServerForegroundController by lazy {
+        ServerForegroundController(streamingSession, streamingManager.isServerRunning)
     }
     val settingsApplier: SettingsApplier by lazy {
         SettingsApplier(settingsDataStore, cameraService, streamingManager, streamWatchdog, mqttAlertPublisher, onvifServer)
@@ -217,7 +225,8 @@ class MainApplication : Application(), SingletonImageLoader.Factory {
         com.raulshma.lenscast.core.push.WebPushSender(
             configProvider = {
                 com.raulshma.lenscast.core.push.WebPushSender.Config(
-                    enabled = settingsDataStore.pushEnabled.value,
+                    browserEnabled = settingsDataStore.pushEnabled.value,
+                    unifiedPushEnabled = settingsDataStore.unifiedPushEnabled.value,
                     // An invalid sub makes every push service reject the JWT at
                     // dispatch — fall open to the default contact instead of
                     // failing silently (the settings field flags it live).
@@ -303,6 +312,7 @@ class MainApplication : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         connectivityMonitor.start()
         settingsApplier.start(appScope)
+        serverForegroundController.start(appScope)
         wireFramePump()
         initializeStreamStateJournal()
         initializeTamperMonitor()
@@ -310,6 +320,14 @@ class MainApplication : Application(), SingletonImageLoader.Factory {
         initializeWidgetRefresh()
         initializeAutoUpdateCheck()
     }
+
+    /**
+     * Retry the server-only foreground promotion from a visible Activity.
+     * Android can deny a start issued while the process is in the background
+     * (for example a boot-time or broadcast-start server); the server keeps
+     * running and the next user visit restores guaranteed alert delivery.
+     */
+    fun ensureServerForeground() = serverForegroundController.sync()
 
     /**
      * The installation-scoped MQTT client id / HA unique-id stem. ANDROID_ID

@@ -56,6 +56,17 @@ class TokenWritePolicyTest {
     }
 
     @Test
+    fun `the UnifiedPush receiver pairing routes are writable`() {
+        // A headless distributor has no session cookie; pairing is exactly
+        // the automation class the API token exists for.
+        assertTrue(TokenWritePolicy.allowsPost("/api/push/unifiedpush"))
+        assertTrue(TokenWritePolicy.allowsPost("/api/push/unifiedpush/remove"))
+        // The browser routes stay session-only.
+        assertFalse(TokenWritePolicy.allowsPost("/api/push/subscriptions"))
+        assertFalse(TokenWritePolicy.allowsPost("/api/push/vapid-public"))
+    }
+
+    @Test
     fun `settings and auth routes are never token-writable`() {
         assertFalse(TokenWritePolicy.allowsPost("/api/settings"))
         assertFalse(TokenWritePolicy.allowsPost("/api/auth/login"))
@@ -110,6 +121,8 @@ class TokenWritePolicyTest {
                 "/api/settings/ml-model/download",
                 "/api/settings/audio-model/download",
                 "/api/detection/test",
+                "/api/push/unifiedpush",
+                "/api/push/unifiedpush/remove",
             ),
             TokenWritePolicy.TOKEN_WRITABLE_POST_ROUTES,
         )

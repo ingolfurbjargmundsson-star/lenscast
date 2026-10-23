@@ -36,6 +36,7 @@ class RoleGatePolicyTest {
             "/api/recordings/sessions", "/api/gallery", "/api/detection/events",
             "/api/detection/events/export", "/api/detection/stats", "/api/system",
             "/api/push/vapid-public", "/api/push/subscriptions",
+            "/api/push/unifiedpush",
         ),
         // Every write route class the ApiRouter registers.
         "settings write" to listOf("/api/settings", "/api/settings/import", "/api/settings/ml-model/download"),
@@ -50,6 +51,7 @@ class RoleGatePolicyTest {
         "audit clear" to listOf("/api/audit"),
         "auth config write" to listOf("/api/auth/config"),
         "push subscribe" to listOf("/api/push/subscriptions"),
+        "unifiedpush pairing" to listOf("/api/push/unifiedpush", "/api/push/unifiedpush/remove"),
     )
 
     private val readMethods = listOf("GET", "HEAD", "OPTIONS")

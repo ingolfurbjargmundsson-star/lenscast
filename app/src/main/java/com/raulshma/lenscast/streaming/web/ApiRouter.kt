@@ -27,6 +27,8 @@ class ApiRouter(
     private val system: SystemWebHandler,
     /** The /api/push Web Push subscription routes (session-only). */
     private val push: PushWebHandler,
+    /** The /api/push/unifiedpush receiver routes (POSTs token-writable). */
+    private val unifiedPush: UnifiedPushWebHandler,
     /** The audit trail for mutating dispatches. */
     private val auditLog: AuditLog,
 ) {
@@ -84,6 +86,7 @@ class ApiRouter(
         "/api/auth/sessions" -> ApiResponse.ok(auth.listSessions())
         "/api/push/vapid-public" -> ApiResponse.ok(push.vapidPublicKey())
         "/api/push/subscriptions" -> ApiResponse.ok(push.list())
+        "/api/push/unifiedpush" -> ApiResponse.ok(unifiedPush.list())
         else -> null
     }
 
@@ -118,6 +121,8 @@ class ApiRouter(
         "/api/auth/config" -> ApiResponse.ok(auth.put(r.body))
         "/api/media/batch-delete" -> ApiResponse.ok(gallery.batchDelete(r.body))
         "/api/push/subscriptions" -> ApiResponse.ok(push.subscribe(r.body))
+        "/api/push/unifiedpush" -> ApiResponse.ok(unifiedPush.register(r.body))
+        "/api/push/unifiedpush/remove" -> ApiResponse.ok(unifiedPush.remove(r.body))
         else -> null
     }
 
@@ -197,6 +202,7 @@ class ApiRouter(
             Route(ApiMethod.GET, "/api/auth/sessions"),
             Route(ApiMethod.GET, "/api/push/vapid-public"),
             Route(ApiMethod.GET, "/api/push/subscriptions"),
+            Route(ApiMethod.GET, "/api/push/unifiedpush"),
             // Writes (PUT shares the POST dispatch; both verbs are accepted)
             Route(ApiMethod.PUT, "/api/settings"),
             Route(ApiMethod.POST, "/api/settings"),
@@ -231,6 +237,8 @@ class ApiRouter(
             Route(ApiMethod.POST, "/api/auth/config"),
             Route(ApiMethod.POST, "/api/media/batch-delete"),
             Route(ApiMethod.POST, "/api/push/subscriptions"),
+            Route(ApiMethod.POST, "/api/push/unifiedpush"),
+            Route(ApiMethod.POST, "/api/push/unifiedpush/remove"),
             // Deletes
             Route(ApiMethod.DELETE, "/api/detection/events"),
             Route(ApiMethod.DELETE, "/api/audit"),

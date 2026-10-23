@@ -1,6 +1,7 @@
 package com.raulshma.lenscast.core.push
 
 import com.raulshma.lenscast.core.Base64Codec
+import com.raulshma.lenscast.core.AppJson
 import com.raulshma.lenscast.core.DetectionAlert
 import com.raulshma.lenscast.core.EventKind
 import org.junit.Assert.assertEquals
@@ -85,6 +86,29 @@ class WebPushSenderTest {
         return generator.generateKeyPair()
     }
 
+    /** A UnifiedPush target: same key material, receiver-managed admission. */
+    private fun subscribeUnifiedPush(
+        store: PushSubscriptionStore,
+        name: String,
+        instance: String = "default",
+    ): Triple<KeyPair, ByteArray, ByteArray> {
+        val pair = p256()
+        val point = VapidKeys.uncompressedPoint(pair.public as ECPublicKey)
+        val authSecret = ByteArray(16) { (it + 7).toByte() }
+        val result = store.addUnifiedPush(
+            endpoint = "https://up.example.com/send/$name",
+            p256dh = PushEncryption.base64Url(point),
+            auth = PushEncryption.base64Url(authSecret),
+            instance = instance,
+            label = "Phone",
+            distributor = "org.unifiedpush.distributor.nextpush",
+            replacedEndpoint = null,
+            createdAtMs = 1,
+        )
+        assertEquals(PushAddStatus.ADDED, result.status)
+        return Triple(pair, point, authSecret)
+    }
+
     private fun alert(kind: EventKind = EventKind.MOTION) = DetectionAlert(
         kind = kind,
         value = 42.0,
@@ -95,19 +119,27 @@ class WebPushSenderTest {
         timestampMs = 1_700_000_000_000L,
     )
 
-    private fun config(enabled: Boolean = true) = WebPushSender.Config(
-        enabled = enabled,
+    private fun config(browserEnabled: Boolean = true, unifiedPushEnabled: Boolean = false) = WebPushSender.Config(
+        browserEnabled = browserEnabled,
+        unifiedPushEnabled = unifiedPushEnabled,
         subject = "mailto:operator@example.com",
     )
 
     // ── the go/no-go verdict ──
 
     @Test
-    fun `willDispatch requires the toggle and at least one subscription`() {
-        assertTrue(WebPushSender.willDispatch(config(), subscriptionCount = 1))
-        assertFalse(WebPushSender.willDispatch(config(enabled = false), subscriptionCount = 1))
-        assertFalse(WebPushSender.willDispatch(config(), subscriptionCount = 0))
-        assertFalse(WebPushSender.willDispatch(null, subscriptionCount = 3))
+    fun `willDispatch requires an enabled transport with at least one target`() {
+        assertTrue(WebPushSender.willDispatch(config(), PushTargetCounts(browser = 1, unifiedPush = 0)))
+        assertTrue(
+            WebPushSender.willDispatch(
+                config(browserEnabled = false, unifiedPushEnabled = true),
+                PushTargetCounts(browser = 0, unifiedPush = 1),
+            ),
+        )
+        assertFalse(WebPushSender.willDispatch(config(browserEnabled = false), PushTargetCounts(browser = 1, unifiedPush = 0)))
+        assertFalse(WebPushSender.willDispatch(config(unifiedPushEnabled = false), PushTargetCounts(browser = 0, unifiedPush = 3)))
+        assertFalse(WebPushSender.willDispatch(config(), PushTargetCounts(browser = 0, unifiedPush = 0)))
+        assertFalse(WebPushSender.willDispatch(null, PushTargetCounts(browser = 3, unifiedPush = 3)))
     }
 
     @Test
@@ -139,6 +171,7 @@ class WebPushSenderTest {
             assertEquals("aes128gcm", call.headers["Content-Encoding"])
             assertEquals("3600", call.headers["TTL"])
             assertEquals("high", call.headers["Urgency"])
+            assertEquals("lenscast-motion", call.headers["Topic"])
             val authorization = call.headers.getValue("Authorization")
             assertTrue(authorization.startsWith("vapid t="))
             assertTrue(authorization.contains(", k="))
@@ -236,6 +269,156 @@ class WebPushSenderTest {
         // And the store is untouched — a thrown transport is a transport
         // failure, not a subscription expiry.
         assertEquals(2, store.count())
+    }
+
+    // ── UnifiedPush and the hardened fan-out ──
+
+    @Test
+    fun `each transport has its own gate and only its own targets dispatch`() {
+        val transport = RecordingTransport()
+        val store = PushSubscriptionStore(File(tmp.root, "kinds.json"))
+        subscribeReceiver(store, "browser")
+        subscribeUnifiedPush(store, "receiver")
+        val sender = WebPushSender(
+            { config(browserEnabled = false, unifiedPushEnabled = true) },
+            store,
+            vapidKeys,
+            transport,
+        )
+        transport.prepare(1)
+
+        assertTrue(sender.notifyEvent(alert(), eventId = "e1", clipAvailable = false))
+        assertTrue(transport.await())
+        assertEquals(1, transport.calls.size)
+        assertTrue(transport.calls.single().endpoint.startsWith("https://up.example.com/send/"))
+    }
+
+    @Test
+    fun `one ephemeral sender key serves the whole fan-out`() {
+        val transport = RecordingTransport()
+        val store = PushSubscriptionStore(File(tmp.root, "onekey.json"))
+        subscribeReceiver(store, "one")
+        subscribeReceiver(store, "two")
+        val sender = WebPushSender(::config, store, vapidKeys, transport)
+        transport.prepare(2)
+
+        assertTrue(sender.notifyEvent(alert(), eventId = "e1", clipAvailable = false))
+        assertTrue(transport.await())
+        assertEquals(2, transport.calls.size)
+        val keys = transport.calls.map { it.body.copyOfRange(21, 21 + 65) }
+        assertTrue("both targets share the dispatch's ephemeral key", keys[0].contentEquals(keys[1]))
+    }
+
+    @Test
+    fun `the VAPID JWT is cached per origin`() {
+        val transport = RecordingTransport()
+        val store = PushSubscriptionStore(File(tmp.root, "vapid-cache.json"))
+        subscribeReceiver(store, "one")
+        subscribeReceiver(store, "two")
+        var now = 1_700_000_000_000L
+        val sender = WebPushSender(::config, store, vapidKeys, transport, nowMs = { now })
+        transport.prepare(2)
+
+        assertTrue(sender.notifyEvent(alert(), eventId = "e1", clipAvailable = false))
+        assertTrue(transport.await())
+        assertEquals(2, transport.calls.size)
+        assertEquals(
+            transport.calls[0].headers["Authorization"],
+            transport.calls[1].headers["Authorization"],
+        )
+
+        // A later dispatch still hits the cache (well inside the 12 h exp).
+        now += 1_000L
+        transport.prepare(2)
+        sender.notifyEvent(alert(), eventId = "e2", clipAvailable = false)
+        assertTrue(transport.await())
+        assertEquals(
+            transport.calls[0].headers["Authorization"],
+            transport.calls[2].headers["Authorization"],
+        )
+    }
+
+    @Test
+    fun `three consecutive transport failures abort the remaining fan-out`() {
+        val transport = RecordingTransport()
+        transport.respond = { -1 }
+        val store = PushSubscriptionStore(File(tmp.root, "failfast.json"))
+        repeat(4) { subscribeReceiver(store, "r$it") }
+        val sender = WebPushSender(::config, store, vapidKeys, transport)
+        transport.prepare(3)
+
+        assertTrue(sender.notifyEvent(alert(), eventId = "e1", clipAvailable = false))
+        assertTrue(transport.await())
+        // Let the worker observe the third failure and break.
+        val deadline = System.currentTimeMillis() + 2_000
+        while (transport.calls.size < 3 && System.currentTimeMillis() < deadline) Thread.sleep(10)
+        Thread.sleep(100)
+        assertEquals(3, transport.calls.size)
+        // Transport failures never prune: the subscribers are still there.
+        assertEquals(4, store.count())
+    }
+
+    @Test
+    fun `the payload is fitted under the cleartext cap`() {
+        val huge = WebPushSender.buildPayload(
+            alert().copy(zones = List(120) { "zone-$it-" + "x".repeat(100) }),
+            eventId = "e1",
+            clipAvailable = false,
+        )
+        val fitted = WebPushSender.fitPayload(huge)
+        val encoded = AppJson.moshi.adapter(PushEventWire::class.java)
+            .toJson(fitted)
+            .toByteArray(Charsets.UTF_8)
+
+        assertTrue(encoded.size <= WebPushSender.MAX_PLAINTEXT_BYTES)
+        assertTrue(fitted.body.length < huge.body.length)
+    }
+
+    @Test
+    fun `the one-slot queue coalesces a burst to the newest payload`() {
+        val transport = BlockingTransport()
+        val store = PushSubscriptionStore(File(tmp.root, "coalesce.json"))
+        val (pair, point, authSecret) = subscribeReceiver(store, "one")
+        val sender = WebPushSender(::config, store, vapidKeys, transport)
+
+        assertTrue(sender.notifyEvent(alert(), eventId = "e1", clipAvailable = false))
+        assertTrue(transport.started.await(5, TimeUnit.SECONDS))
+        // The first dispatch is parked in the transport; both newer events
+        // land in the one pending slot, so only the newest dispatches next.
+        assertTrue(sender.notifyEvent(alert(), eventId = "e2", clipAvailable = false))
+        assertTrue(sender.notifyEvent(alert(), eventId = "e3", clipAvailable = false))
+        transport.release.countDown()
+
+        val deadline = System.currentTimeMillis() + 5_000
+        while (transport.calls.size < 2 && System.currentTimeMillis() < deadline) Thread.sleep(10)
+        assertEquals(2, transport.calls.size)
+        val json = String(
+            PushEncryption.decrypt(transport.calls[1].body, point, pair.private, authSecret),
+            Charsets.UTF_8,
+        )
+        assertTrue(json.contains("\"eventId\":\"e3\""))
+        assertFalse(json.contains("\"eventId\":\"e2\""))
+    }
+
+    private class BlockingTransport : WebPushSender.Transport {
+        class Call(val endpoint: String, val headers: Map<String, String>, val body: ByteArray)
+
+        val calls = mutableListOf<Call>()
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+
+        @Volatile
+        private var blockNext = true
+
+        override fun post(endpoint: String, headers: Map<String, String>, body: ByteArray): Int {
+            synchronized(calls) { calls.add(Call(endpoint, headers, body)) }
+            if (blockNext) {
+                blockNext = false
+                started.countDown()
+                release.await(5, TimeUnit.SECONDS)
+            }
+            return 201
+        }
     }
 
     // ── payload mapping ──

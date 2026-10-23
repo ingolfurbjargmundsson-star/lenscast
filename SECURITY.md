@@ -32,8 +32,12 @@ What protects those assets:
   cannot drive the dashboard.
 - **API token**: the optional Bearer/`X-Api-Token` credential is
   read-only plus a narrow, explicit **write allow-list** (stream start/
-  stop, capture, recording, siren/torch, model downloads); auth and
-  session-management routes are never token-writable.
+  stop, capture, recording, siren/torch, model downloads, the detection-test
+  alert, and UnifiedPush receiver pairing). Auth and session-management
+  routes are never token-writable, and the browser push subscription list is
+  session-only. The UnifiedPush pairing routes let a token holder enroll a
+  receiver and receive detection alerts — treat the token as a
+  push-enrollment credential as well as a read credential.
 - **RTSP authentication**: RTSP digest auth (credentials are not sent in
   plaintext over the RTSP connection).
 - **TLS mode**: an optional HTTPS mode with a **self-signed on-device

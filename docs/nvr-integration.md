@@ -105,9 +105,10 @@ Notes:
 ## API token (programmatic writes)
 
 When stream auth is enabled, the API token (Bearer / `X-Api-Token` header)
-authorizes read-only GET and HEAD requests — and POSTs on an explicit
-allow-list, so scripts can drive the camera without holding a session
-cookie:
+authorizes read-only GET and HEAD requests on the protected routes except
+`/api/auth/*` and the browser push subscription list — and POSTs on an
+explicit allow-list, so scripts can drive the camera without holding a
+session cookie:
 
 ```bash
 TOKEN="Authorization: Bearer YOUR_TOKEN"
@@ -139,12 +140,16 @@ The writable set is exactly: `/api/stream/start`, `/api/stream/resume`,
 `/api/stream/whip/start`, `/api/stream/whip/stop`, `/api/capture`,
 `/api/recording/start`, `/api/recording/stop`, `/api/deterrence/siren`,
 `/api/camera/torch`, `/api/settings/ml-model/download`,
-`/api/settings/audio-model/download`, and `/api/detection/test` (the model
+`/api/settings/audio-model/download`, `/api/detection/test` (the model
 downloads and the test alert are device-maintenance actions that persist no
-setting — see [RTMP push](rtmp.md) for the push routes).
-Everything else stays read-only for tokens (Web Push subscriptions
-deliberately included — they are browser-session state), and no `/api/auth/`
-route is ever token-writable.
+setting — see [RTMP push](rtmp.md) for the stream-push routes), and
+`/api/push/unifiedpush` / `/api/push/unifiedpush/remove` (the one
+persisted-target exception: pairing a receiver routes future alerts to it —
+see [UnifiedPush](unifiedpush.md)).
+Everything else stays read-only for tokens, and the browser Web Push
+subscription routes are session-cookie-only (neither token-readable nor
+token-writable) — they are browser-session state and kind-scoped to browser
+rows. No `/api/auth/` route is ever token-readable or token-writable.
 
 ## Recording timeline (NVR day view)
 

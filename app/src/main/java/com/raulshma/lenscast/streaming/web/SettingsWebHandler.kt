@@ -220,6 +220,7 @@ class SettingsWebHandler(
                 mqttDiscoveryPrefix = store.mqttDiscoveryPrefix.value,
                 mqttTelemetryEnabled = store.mqttTelemetryEnabled.value,
                 pushEnabled = store.pushEnabled.value,
+                unifiedPushEnabled = store.unifiedPushEnabled.value,
                 captureRetentionDays = store.captureRetentionDays.value,
                 eventRetentionDays = store.eventRetentionDays.value,
                 storageQuotaMb = store.storageQuotaMb.value,
@@ -387,6 +388,9 @@ class SettingsWebHandler(
             // subscriptions themselves are browser-session state through the
             // /api/push routes, never this document.
             settingsDataStore.savePushEnabled(stream.pushEnabled)
+            // UnifiedPush is an independent gate; its targets live in the
+            // push store behind /api/push/unifiedpush, never this document.
+            settingsDataStore.saveUnifiedPushEnabled(stream.unifiedPushEnabled)
             // Retention windows clamp on save through their descriptors
             // (0 = keep forever), like every other bounded numeric setting.
             settingsDataStore.saveCaptureRetentionDays(stream.captureRetentionDays)

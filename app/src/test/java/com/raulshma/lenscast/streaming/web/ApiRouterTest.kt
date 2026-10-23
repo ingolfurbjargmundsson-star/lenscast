@@ -34,6 +34,7 @@ class ApiRouterTest {
     private val detectionTest = mockk<DetectionTestWebHandler>(relaxed = true)
     private val system = mockk<SystemWebHandler>(relaxed = true)
     private val push = mockk<PushWebHandler>(relaxed = true)
+    private val unifiedPush = mockk<UnifiedPushWebHandler>(relaxed = true)
     private val auditLog = mockk<AuditLog>(relaxed = true)
 
     private fun router() = ApiRouter(
@@ -53,6 +54,7 @@ class ApiRouterTest {
         detectionTest = detectionTest,
         system = system,
         push = push,
+        unifiedPush = unifiedPush,
         auditLog = auditLog,
     )
 

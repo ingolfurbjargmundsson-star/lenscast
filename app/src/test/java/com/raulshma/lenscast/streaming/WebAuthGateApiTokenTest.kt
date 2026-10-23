@@ -7,7 +7,8 @@ import org.junit.Test
 
 /**
  * The API-token verdict ladder: enabled + configured hash + constant-time
- * SHA-256 match, GET/HEAD anywhere protected, POST only on the
+ * SHA-256 match, GET/HEAD on protected routes except the auth and browser
+ * push subscription routes, POST only on the
  * TokenWritePolicy allow-list, never on the auth routes. The token provider
  * is injected (and re-pointable) so the live-read contract is tested without
  * a store or a socket.
@@ -66,6 +67,10 @@ class WebAuthGateApiTokenTest {
         assertTrue(g.authorizeApiToken(token, "POST", "/api/recording/stop"))
         assertTrue(g.authorizeApiToken(token, "POST", "/api/deterrence/siren"))
         assertTrue(g.authorizeApiToken(token, "POST", "/api/camera/torch"))
+        assertTrue(g.authorizeApiToken(token, "POST", "/api/push/unifiedpush"))
+        assertTrue(g.authorizeApiToken(token, "POST", "/api/push/unifiedpush/remove"))
+        // Query strings are not part of the route key.
+        assertTrue(g.authorizeApiToken(token, "POST", "/api/push/unifiedpush?source=receiver"))
     }
 
     @Test
@@ -105,6 +110,18 @@ class WebAuthGateApiTokenTest {
     fun `a path merely containing the auth prefix is not denied`() {
         // The denial is a path-prefix rule, not a substring rule.
         assertTrue(gate().authorizeApiToken(token, "GET", "/api/authx"))
+    }
+
+    @Test
+    fun `browser push subscription routes are session-only for tokens`() {
+        val g = gate()
+        assertFalse(g.authorizeApiToken(token, "GET", "/api/push/subscriptions"))
+        assertFalse(g.authorizeApiToken(token, "HEAD", "/api/push/subscriptions"))
+        // Query strings ride the same path.
+        assertFalse(g.authorizeApiToken(token, "GET", "/api/push/subscriptions?kind=browser"))
+        // The UnifiedPush routes stay token-readable; only the browser list
+        // (session-managed state) is denied.
+        assertTrue(g.authorizeApiToken(token, "GET", "/api/push/unifiedpush"))
     }
 
     // ── config ladder ──

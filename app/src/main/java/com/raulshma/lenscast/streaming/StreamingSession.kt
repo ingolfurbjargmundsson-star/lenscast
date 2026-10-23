@@ -24,6 +24,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Owns the live-streaming session choreography: wake lock, thermal monitoring,
  * battery optimization, camera keep-alive, foreground service and watchdog.
+ * It also owns the runtime foreground service's server-only mode: when the
+ * camera web server is up with no live output, [ensureServerForeground] keeps
+ * the service (and therefore outbound alert delivery) out of Android's
+ * background-network firewall without holding the camera or a wake lock.
  *
  * One begin()/end() pair per session replaces the per-caller copies that used
  * to live in Web API callers, CameraViewModel and StreamWatchdog. begin() is
@@ -54,6 +58,11 @@ class StreamingSession(
     private val streamingManager: StreamingManager by lazy(streamingManagerProvider)
 
     private val active = AtomicBoolean(false)
+    // Serializes the foreground-service mode handoff with the session's
+    // active bit. begin() and the server-state controller can otherwise
+    // interleave a server promotion after a stream promotion, downgrading a
+    // live stream to the camera-free CONNECTED_DEVICE type.
+    private val foregroundModeLock = Any()
     private val lifecycleMutex = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var optimizationJob: Job? = null
@@ -78,7 +87,7 @@ class StreamingSession(
                 Log.d(TAG, "Streaming session foreground type re-asserted for late output start")
                 return
             }
-            active.set(true)
+            synchronized(foregroundModeLock) { active.set(true) }
             var keepAliveAcquired = false
             var foregroundStarted = false
             try {
@@ -100,7 +109,7 @@ class StreamingSession(
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to begin streaming session; unwinding", e)
                 unwind(keepAliveAcquired, foregroundStarted)
-                active.set(false)
+                synchronized(foregroundModeLock) { active.set(false) }
                 throw e
             }
         }
@@ -108,35 +117,95 @@ class StreamingSession(
 
     /**
      * Re-asserts the foreground service's type after a mic-capture verdict
-     * flip the stream lifecycle did not cause — arming sound detection starts
+     * flip the stream lifecycle did not cause - arming sound detection starts
      * a headless capture, disarming stops it, and the service must carry (or
-     * drop) the MICROPHONE type accordingly. No-op with no live session: the
-     * next begin() computes the verdict fresh.
+     * drop) the MICROPHONE type accordingly. With no live session, re-asserts
+     * the server-only mode when the server is up so a headless capture still
+     * gets the type.
      */
     suspend fun refreshForegroundMicVerdict() {
         lifecycleMutex.withLock {
             if (active.get()) {
                 sendForegroundIntent(StreamingService.ACTION_START)
                 Log.d(TAG, "Foreground mic verdict re-asserted")
+            } else if (streamingManager.isServerRunning.value) {
+                // Sound detection can hold the mic with no stream session;
+                // server mode must gain/lose the MICROPHONE type just like a
+                // live stream does.
+                ensureServerForeground()
+                Log.d(TAG, "Server foreground mic verdict re-asserted")
             }
         }
     }
 
     /**
-     * Tear the session down. No-op while another output is still live or when
-     * no session is active.
+     * Promote the runtime foreground service in server-only mode. No-op while
+     * a stream session is active: that mode already owns the one notification
+     * slot and carries the stronger camera/microphone types.
+     *
+     * Best-effort by design. Android can deny a foreground-service start from
+     * the background (or from a background app-start); the server keeps
+     * running and the next visible resume retries through
+     * [ServerForegroundController.sync]. The caller is never crashed by a
+     * policy denial here.
+     */
+    fun ensureServerForeground() {
+        synchronized(foregroundModeLock) {
+            if (active.get()) return
+            ensureServerForegroundLocked()
+        }
+    }
+
+    private fun ensureServerForegroundLocked() {
+        runCatching { sendForegroundIntent(StreamingService.ACTION_SERVER) }
+            .onFailure {
+                Log.w(TAG, "Server foreground start deferred: ${it.javaClass.simpleName}")
+            }
+    }
+
+    /**
+     * Remove the server-only notification when the server is gone. No-op while
+     * a stream session is active; [end] owns that handoff.
+     */
+    fun stopServerForegroundIfIdle() {
+        synchronized(foregroundModeLock) {
+            if (active.get()) return
+            stopForegroundServiceLocked()
+        }
+    }
+
+    private fun stopForegroundServiceLocked() {
+        context.stopService(Intent(context, StreamingService::class.java))
+    }
+
+    /**
+     * Tear the session down. No-op while another output is still live. When no
+     * session is active, a stopped server still drops the server-only
+     * foreground service.
      */
     suspend fun end() {
         lifecycleMutex.withLock {
-            if (!active.get()) return
+            if (!active.get()) {
+                if (!streamingManager.isServerRunning.value) stopServerForegroundIfIdle()
+                return
+            }
             if (streamingManager.isLiveStreaming()) return
-            active.set(false)
+            // Keep the session active through teardown so a concurrent server
+            // sync cannot promote server mode over a still-live stream.
             stopOptimizationPolling()
             streamWatchdog.stopMonitoring()
             powerManager.releaseWakeLock()
             thermalMonitor.stopMonitoring()
             releaseKeepAliveAndRebind()
-            sendForegroundIntent(StreamingService.ACTION_PAUSE)
+            // Publish the session end and the new foreground mode atomically.
+            synchronized(foregroundModeLock) {
+                active.set(false)
+                if (streamingManager.isServerRunning.value) {
+                    ensureServerForegroundLocked()
+                } else {
+                    stopForegroundServiceLocked()
+                }
+            }
             Log.d(TAG, "Streaming session ended")
         }
     }
@@ -235,7 +304,9 @@ class StreamingSession(
     }
 
     // Best-effort reverse of begin(). Runs when the attach failed midway; the
-    // foreground PAUSE is attempted only if the START may have gone through.
+    // foreground handoff is attempted only if the START may have gone through.
+    // If the server is still up, fall back to server mode instead of dropping
+    // the process back to the background-network firewall.
     private suspend fun unwind(keepAliveAcquired: Boolean, foregroundStarted: Boolean) {
         stopOptimizationPolling()
         runCatching { streamWatchdog.stopMonitoring() }
@@ -251,7 +322,13 @@ class StreamingSession(
             }
         }
         if (foregroundStarted) {
-            runCatching { sendForegroundIntent(StreamingService.ACTION_PAUSE) }
+            runCatching {
+                if (streamingManager.isServerRunning.value) {
+                    sendForegroundIntent(StreamingService.ACTION_SERVER)
+                } else {
+                    context.stopService(Intent(context, StreamingService::class.java))
+                }
+            }
         }
     }
 
@@ -305,24 +382,34 @@ class StreamingSession(
         val intent = Intent(context, StreamingService::class.java).apply {
             this.action = action
             putExtra(StreamingService.EXTRA_URL, streamingManager.streamUrl.value)
-            if (action == StreamingService.ACTION_START) {
-                // Either live output capturing the mic needs the service's
-                // MICROPHONE type — the old web-only flag left RTSP-only
-                // streaming capturing without it, which the OS silences. The
-                // RTMP push taps the same AAC path and the WHIP push owns its
-                // dedicated AudioRecord, so both count the same way; the
-                // shared capture also covers the sound-detection hold, which
-                // keeps the mic up with no stream consumers at all.
-                putExtra(
-                    StreamingService.EXTRA_AUDIO_ACTIVE,
-                    streamingManager.isSharedMicCapturing() ||
-                        streamingManager.isRtspAudioActive() ||
-                        streamingManager.isRtmpAudioActive() ||
-                        streamingManager.isWhipAudioActive(),
-                )
+            when (action) {
+                StreamingService.ACTION_START -> {
+                    // Either live output capturing the mic needs the service's
+                    // MICROPHONE type - the old web-only flag left RTSP-only
+                    // streaming capturing without it, which the OS silences. The
+                    // RTMP push taps the same AAC path and the WHIP push owns its
+                    // dedicated AudioRecord, so both count the same way; the
+                    // shared capture also covers the sound-detection hold, which
+                    // keeps the mic up with no stream consumers at all.
+                    putExtra(
+                        StreamingService.EXTRA_AUDIO_ACTIVE,
+                        streamingManager.isSharedMicCapturing() ||
+                            streamingManager.isRtspAudioActive() ||
+                            streamingManager.isRtmpAudioActive() ||
+                            streamingManager.isWhipAudioActive(),
+                    )
+                }
+                StreamingService.ACTION_SERVER -> {
+                    // Server mode is camera-free; only a headless sound-detection
+                    // hold can legitimately need the MICROPHONE type here.
+                    if (streamingManager.isSharedMicCapturing()) {
+                        putExtra(StreamingService.EXTRA_AUDIO_ACTIVE, true)
+                    }
+                }
             }
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && action == StreamingService.ACTION_START) {
+        val promote = action == StreamingService.ACTION_START || action == StreamingService.ACTION_SERVER
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && promote) {
             context.startForegroundService(intent)
         } else {
             context.startService(intent)

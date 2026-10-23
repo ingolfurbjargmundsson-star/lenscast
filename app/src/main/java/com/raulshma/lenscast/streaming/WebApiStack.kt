@@ -12,6 +12,7 @@ import com.raulshma.lenscast.streaming.web.GalleryWebHandler
 import com.raulshma.lenscast.streaming.web.PushWebHandler
 import com.raulshma.lenscast.streaming.web.StatusWebHandler
 import com.raulshma.lenscast.streaming.web.SystemWebHandler
+import com.raulshma.lenscast.streaming.web.UnifiedPushWebHandler
 
 /**
  * The Web API modules handed to each StreamingServer at construction. The
@@ -31,4 +32,5 @@ data class WebApiStack(
     val detectionTest: DetectionTestWebHandler,
     val system: SystemWebHandler,
     val push: PushWebHandler,
+    val unifiedPush: UnifiedPushWebHandler,
 )

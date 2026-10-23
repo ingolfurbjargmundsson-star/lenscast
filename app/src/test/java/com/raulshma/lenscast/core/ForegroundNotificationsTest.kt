@@ -11,7 +11,7 @@ class ForegroundNotificationsTest {
     fun `registry ids are all distinct`() {
         val ids = listOf(
             ForegroundNotifications.RECORDING_NOTIFICATION_ID,
-            ForegroundNotifications.STREAMING_NOTIFICATION_ID,
+            ForegroundNotifications.RUNTIME_NOTIFICATION_ID,
             ForegroundNotifications.UPDATE_NOTIFICATION_ID,
             ForegroundNotifications.INTERVAL_CAPTURE_NOTIFICATION_ID,
         )
@@ -21,7 +21,7 @@ class ForegroundNotificationsTest {
     @Test
     fun `registry ids keep their pinned slots`() {
         assertEquals(1001, ForegroundNotifications.RECORDING_NOTIFICATION_ID)
-        assertEquals(1002, ForegroundNotifications.STREAMING_NOTIFICATION_ID)
+        assertEquals(1002, ForegroundNotifications.RUNTIME_NOTIFICATION_ID)
         assertEquals(1003, ForegroundNotifications.UPDATE_NOTIFICATION_ID)
         // Interval capture previously collided with streaming on 1002.
         assertEquals(1004, ForegroundNotifications.INTERVAL_CAPTURE_NOTIFICATION_ID)
@@ -72,6 +72,22 @@ class ForegroundNotificationsTest {
     }
 
     // ── interval-capture message: the in-flight photo of the series ──
+
+    // server message: names the server URL when known
+
+    @Test
+    fun `server message names the stream url`() {
+        assertEquals(
+            "Camera server active at http://192.168.1.10:8080/stream",
+            ForegroundNotifications.serverMessage("http://192.168.1.10:8080/stream")
+        )
+    }
+
+    @Test
+    fun `server message without a url stays generic`() {
+        assertEquals("Camera server active", ForegroundNotifications.serverMessage(null))
+        assertEquals("Camera server active", ForegroundNotifications.serverMessage(""))
+    }
 
     @Test
     fun `interval message shows the first photo as photo one`() {

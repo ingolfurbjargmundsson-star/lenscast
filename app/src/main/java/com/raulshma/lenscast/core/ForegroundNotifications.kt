@@ -1,5 +1,6 @@
 package com.raulshma.lenscast.core
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,16 +8,19 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.work.ForegroundInfo
 
 /**
  * The one foreground-notification registry: the notification IDs for every
- * foreground producer (streaming, recording, interval capture, update) plus
- * the shared notification scaffolding — channel creation, the standard
- * builder, both camera promotion variants (Service.startForeground and
+ * foreground producer (the runtime service's server/streaming modes,
+ * recording, interval capture, update) plus the shared notification
+ * scaffolding - channel creation, the standard builder, the camera and
+ * connected-device promotion variants (Service.startForeground and
  * WorkManager's ForegroundInfo), and the pure body-line decisions. The IDs
  * live here so two producers can never claim the same slot (streaming and
  * interval capture previously both used 1002 and replaced each other's
@@ -24,9 +28,11 @@ import androidx.work.ForegroundInfo
  */
 object ForegroundNotifications {
 
-    // One distinct notification slot per foreground producer.
+    // One distinct notification slot per foreground producer. 1002 belongs to
+    // the runtime service, whose server-only and streaming modes share it so a
+    // mode handoff updates one notification instead of racing two.
     const val RECORDING_NOTIFICATION_ID = 1001
-    const val STREAMING_NOTIFICATION_ID = 1002
+    const val RUNTIME_NOTIFICATION_ID = 1002
     const val UPDATE_NOTIFICATION_ID = 1003
     const val INTERVAL_CAPTURE_NOTIFICATION_ID = 1004
 
@@ -91,6 +97,14 @@ object ForegroundNotifications {
         }
 
     /**
+     * The server-only notification's body line. It names the same stream URL
+     * the stream notification would use, so one URL is the service's public
+     * address in both modes.
+     */
+    fun serverMessage(url: String?): String =
+        if (!url.isNullOrEmpty()) "Camera server active at $url" else "Camera server active"
+
+    /**
      * The interval-capture progress line: which photo of the series is being
      * taken this tick ([completedCaptures] is the count already done, the
      * notification shows the one in flight). Without a known total it stays
@@ -112,10 +126,54 @@ object ForegroundNotifications {
         notificationId: Int,
         notification: Notification,
         includeAudio: Boolean,
+    ) = startTypedForeground(
+        service = service,
+        notificationId = notificationId,
+        notification = notification,
+        includeAudio = includeAudio,
+        baseType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA,
+    )
+
+    /**
+     * Promote the runtime service's server-only mode. CONNECTED_DEVICE covers
+     * the local HTTP/RTSP server's network interactions with external clients
+     * and has no while-in-use prerequisite; MICROPHONE is added only when the
+     * sound-detection hold is actually capturing (the permission gate keeps a
+     * stale extra from turning into a startForeground SecurityException).
+     *
+     * The manifest declares `camera|microphone|connectedDevice`; the app
+     * already holds CHANGE_WIFI_MULTICAST_STATE, one of the platform's
+     * connected-device prerequisites.
+     */
+    fun startConnectedDeviceForeground(
+        service: Service,
+        notificationId: Int,
+        notification: Notification,
+        includeAudio: Boolean,
+    ) = startTypedForeground(
+        service = service,
+        notificationId = notificationId,
+        notification = notification,
+        includeAudio = includeAudio,
+        baseType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+    )
+
+    /**
+     * The shared typed startForeground: [baseType] plus MICROPHONE when this
+     * process may actually capture audio. The permission gate keeps a stale
+     * `includeAudio` from turning into a startForeground SecurityException.
+     */
+    private fun startTypedForeground(
+        service: Service,
+        notificationId: Int,
+        notification: Notification,
+        includeAudio: Boolean,
+        baseType: Int,
     ) {
+        val microphoneAllowed = includeAudio && canUseMicrophone(service)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            var serviceTypes = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-            if (includeAudio && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            var serviceTypes = baseType
+            if (microphoneAllowed && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 serviceTypes = serviceTypes or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
             }
             service.startForeground(notificationId, notification, serviceTypes)
@@ -123,6 +181,10 @@ object ForegroundNotifications {
             service.startForeground(notificationId, notification)
         }
     }
+
+    private fun canUseMicrophone(service: Service): Boolean =
+        ContextCompat.checkSelfPermission(service, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
 
     /**
      * The WorkManager twin of [startCameraForeground]: a camera-typed

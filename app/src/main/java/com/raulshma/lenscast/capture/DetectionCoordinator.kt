@@ -429,8 +429,9 @@ class DetectionCoordinator(
         )
         if (webhookDispatched) dispatched.add(ACTION_WEBHOOK)
         if (mqttPublisher()?.notifyEvent(alert, deepLink = DetectionEventDeepLink.EVENTS) == true) dispatched.add(ACTION_MQTT)
-        // Same claim contract: push fires only when the toggle is on and at
-        // least one browser is subscribed (the verdict is the sender's own).
+        // Same claim contract: push fires only when a gate is on and at
+        // least one target on that transport is subscribed (the verdict is
+        // the sender's own).
         val pushed = webPushSender()?.notifyEvent(
             alert,
             eventId = null,
@@ -556,10 +557,11 @@ class DetectionCoordinator(
                     mqttPublisher()?.notifyEvent(alert, deepLink = DetectionEventDeepLink.EVENTS) == true
                 if (mqttPublished) dispatchedActions.add(ACTION_MQTT)
                 // The Web Push sink rides the same verdict contract: "push"
-                // is claimed when the toggle is on and at least one browser
-                // subscription received a dispatch. One encrypted RFC 8291
-                // payload goes to every stored endpoint; failures log and
-                // never touch the rest of the fan-out.
+                // is claimed when a transport gate is on and at least one
+                // target on that transport received a dispatch. One plaintext
+                // JSON is encrypted per target and POSTed to every enabled
+                // endpoint; failures log and never touch the rest of the
+                // fan-out.
                 val pushed = webPushSender()?.notifyEvent(
                     alert,
                     eventId = eventId,

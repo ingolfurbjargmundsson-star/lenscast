@@ -45,13 +45,20 @@ object TokenWritePolicy {
         // Test alert: fires the alert sinks once (webhook/MQTT/notification);
         // it persists nothing, records no event, and cannot arm deterrence.
         "/api/detection/test",
+        // UnifiedPush receiver pairing: a headless distributor has no browser
+        // session. This is the one persisted-state exception: enrolling a
+        // receiver routes future detection alerts to it, while the routes stay
+        // kind-scoped and cannot inspect or alter browser subscriptions.
+        "/api/push/unifiedpush",
+        "/api/push/unifiedpush/remove",
     )
 
-    // Deliberately absent: every /api/push route. Web Push subscriptions are
-    // browser-session state — the POST body is the subscribing browser's own
-    // service-worker key material, and a subscription is only useful to the
-    // browser that minted it. They ride the session-cookie + CSRF ladder and
-    // are never token-writable.
+    // Deliberately absent: the browser Web Push routes. A browser
+    // subscription is the subscribing browser's own service-worker state and
+    // is only useful to that browser, so it rides the session-cookie + CSRF
+    // ladder and is never token-writable or token-readable (the gate denies
+    // token GET/HEAD on /api/push/subscriptions too). The UnifiedPush routes
+    // above are the automation exception, and both are receiver-scoped.
 
     /** True when a POST carrying a valid API token may proceed to [path]. */
     fun allowsPost(path: String): Boolean = path in TOKEN_WRITABLE_POST_ROUTES

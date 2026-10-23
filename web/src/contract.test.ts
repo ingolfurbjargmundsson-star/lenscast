@@ -158,6 +158,7 @@ const STREAMING_KEYS = [
   'mqttTls',
   'mqttDiscoveryPrefix',
   'pushEnabled',
+  'unifiedPushEnabled',
   'mlModelState',
   'mlModelProgress',
   'mlModelError',
@@ -492,6 +493,7 @@ describe('API_DEFAULTS lockstep with the fixtures', () => {
     expect(streaming.mqttTls).toBe(API_DEFAULTS.mqttTls)
     expect(streaming.mqttDiscoveryPrefix).toBe(API_DEFAULTS.mqttDiscoveryPrefix)
     expect(streaming.pushEnabled).toBe(API_DEFAULTS.pushEnabled)
+    expect(streaming.unifiedPushEnabled).toBe(API_DEFAULTS.unifiedPushEnabled)
   })
 
   it('detection suite, retention and rtspResolution fallbacks match the settings fixture defaults', () => {
