@@ -81,6 +81,11 @@ dependencies {
 
     implementation(libs.androidx.activity.compose)
 
+    // SettingsActivity's registerForActivityResult call needs fragment
+    // >= 1.3.0 (lint InvalidFragmentVersionForActivityResult); the wear
+    // artifact alone drags in an older fragment transitively.
+    implementation(libs.androidx.fragment.ktx)
+
     // Watch-side settings persistence (host, port, credentials, alerts).
     implementation(libs.datastore.preferences)
 
